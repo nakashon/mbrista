@@ -18,8 +18,9 @@ type SocketEventMap = {
 
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 let activeSid: string | null = null;
-let activeIp: string | null = null;
+let activeBase: string | null = null;
 let stopped = false;
+let activeHandlers: Partial<SocketEventMap> = {};
 
 function getMachineIp(): string | null {
   if (typeof window === "undefined") return null;
@@ -29,8 +30,18 @@ function getMachineIp(): string | null {
 /** Parse socket.io EIO4 polling body into [event, data] pairs */
 function parsePackets(raw: string): Array<[string, unknown]> {
   const out: Array<[string, unknown]> = [];
-  // Multiple packets separated by record separator \x1e
   for (const pkt of raw.split("\x1e")) {
+    if (pkt === "2") {
+      // ping — send pong asynchronously (fire and forget)
+      if (activeSid && activeBase) {
+        fetch(`${activeBase}&sid=${activeSid}`, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain" },
+          body: "3",
+        }).catch(() => {});
+      }
+      continue;
+    }
     if (!pkt.startsWith("42")) continue; // only message packets
     try {
       const arr = JSON.parse(pkt.slice(2));
@@ -40,15 +51,32 @@ function parsePackets(raw: string): Array<[string, unknown]> {
   return out;
 }
 
+async function doPoll(): Promise<void> {
+  if (stopped || !activeSid || !activeBase) return;
+  try {
+    const res = await fetch(`${activeBase}&sid=${activeSid}&t=${Date.now()}`, {
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) return;
+    const raw = await res.text();
+    for (const [event, data] of parsePackets(raw)) {
+      if (event === "status")       activeHandlers.status?.(data as LiveStatus);
+      if (event === "sensors")      activeHandlers.temperatures?.(data as LiveTemperatures);
+      if (event === "temperatures") activeHandlers.temperatures?.(data as LiveTemperatures);
+    }
+  } catch { /* network blip — keep polling */ }
+}
+
 export async function connectSocket(handlers: Partial<SocketEventMap>): Promise<void> {
   if (activeSid) return; // already running
   stopped = false;
+  activeHandlers = handlers;
 
   const ip = getMachineIp();
   if (!ip) throw new Error("Machine IP not configured");
-  activeIp = ip;
 
   const base = `http://${ip}/socket.io/?EIO=4&transport=polling`;
+  activeBase = base;
 
   // Step 1 — open session
   const openRes = await fetch(base, { signal: AbortSignal.timeout(6000) });
@@ -69,37 +97,17 @@ export async function connectSocket(handlers: Partial<SocketEventMap>): Promise<
 
   handlers.connect?.();
 
-let activePoll: (() => Promise<void>) | null = null;
-
-  // Step 3 — poll every 2 s
-  const poll = async () => {
-    if (stopped || !activeSid) return;
-    try {
-      const res = await fetch(`${base}&sid=${activeSid}&t=${Date.now()}`, {
-        signal: AbortSignal.timeout(5000),
-      });
-      if (!res.ok) return;
-      const raw = await res.text();
-      for (const [event, data] of parsePackets(raw)) {
-        if (event === "status")      handlers.status?.(data as LiveStatus);
-        if (event === "sensors")     handlers.temperatures?.(data as LiveTemperatures);
-        if (event === "temperatures") handlers.temperatures?.(data as LiveTemperatures);
-      }
-    } catch { /* network blip — keep polling */ }
-  };
-
-  // Fire first poll immediately so stats appear without waiting 2 s
-  activePoll = poll;
-  await poll();
-  pollTimer = setInterval(poll, 2000);
+  // Step 3 — poll every 2 s; first poll fires immediately
+  await doPoll();
+  pollTimer = setInterval(doPoll, 2000);
 }
 
 export function disconnectSocket(): void {
   stopped = true;
   if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
   activeSid = null;
-  activeIp = null;
-  activePoll = null;
+  activeBase = null;
+  activeHandlers = {};
 }
 
 export function isSocketConnected(): boolean {
@@ -108,7 +116,7 @@ export function isSocketConnected(): boolean {
 
 /** Force an immediate poll — call after actions to get instant feedback */
 export function refreshNow(): void {
-  activePoll?.();
+  doPoll();
 }
 
 // Not used with polling but kept for API compat
