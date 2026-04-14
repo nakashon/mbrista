@@ -49,7 +49,12 @@ export function ConnectDialog({ open, onConnected, onCancel }: ConnectDialogProp
       setTimeout(() => onConnected(ip.trim()), 600);
     } catch {
       setStatus("error");
-      setErrorMsg("Could not reach the machine at that address.");
+      const isHttps = typeof window !== "undefined" && window.location.protocol === "https:";
+      setErrorMsg(
+        isHttps
+          ? "Blocked — browser security prevents https:// pages from reaching local devices."
+          : "Could not reach the machine at that address."
+      );
     }
   }
 
@@ -68,13 +73,25 @@ export function ConnectDialog({ open, onConnected, onCancel }: ConnectDialogProp
             </div>
           </DialogHeader>
 
-          {/* Same-network reminder */}
+          {/* Same-network reminder — with HTTP tip on mobile/HTTPS */}
           <div className="flex items-start gap-2.5 rounded-xl bg-[#e8944a]/[0.07] border border-[#e8944a]/15 px-3 py-2.5 mt-1">
             <Wifi className="h-4 w-4 text-[#e8944a] shrink-0 mt-0.5" />
-            <p className="text-xs text-[#f5f0ea]/60 leading-relaxed">
-              <span className="text-[#e8944a] font-medium">Same WiFi required.</span>{" "}
-              Your computer and the Meticulous must be on the same network — metbarista connects directly, no cloud involved.
-            </p>
+            <div className="text-xs text-[#f5f0ea]/60 leading-relaxed space-y-1">
+              <p>
+                <span className="text-[#e8944a] font-medium">Same WiFi required.</span>{" "}
+                metbarista connects directly to your machine — no cloud involved.
+              </p>
+              {typeof window !== "undefined" && window.location.protocol === "https:" && (
+                <p className="text-[#f5f0ea]/45">
+                  📱 <span className="text-[#f5f0ea]/60 font-medium">On mobile?</span> Browsers block secure pages from reaching local devices.
+                  Use{" "}
+                  <a href="http://metbarista.com" className="underline text-[#e8944a]/80 hover:text-[#e8944a]">
+                    http://metbarista.com
+                  </a>{" "}
+                  instead.
+                </p>
+              )}
+            </div>
           </div>
         </div>
 
@@ -108,9 +125,18 @@ export function ConnectDialog({ open, onConnected, onCancel }: ConnectDialogProp
                 <span>{errorMsg}</span>
               </div>
               <ul className="text-xs text-red-400/70 list-disc list-inside space-y-0.5 pl-1">
-                <li><strong className="text-red-400">Phone on the same WiFi?</strong> This is the #1 cause — cellular or guest networks won&apos;t work</li>
-                <li>Is the machine powered on and showing WiFi connected?</li>
-                <li>Double-check the IP — it may have changed after a reboot</li>
+                {typeof window !== "undefined" && window.location.protocol === "https:" ? (
+                  <>
+                    <li><strong className="text-red-400">Use http://metbarista.com on mobile</strong> — browsers block https pages from reaching local IPs</li>
+                    <li>Or on desktop: Chrome → site settings → Insecure content → Allow</li>
+                  </>
+                ) : (
+                  <>
+                    <li><strong className="text-red-400">Phone on the same WiFi?</strong> This is the #1 cause — cellular or guest networks won&apos;t work</li>
+                    <li>Is the machine powered on and showing WiFi connected?</li>
+                    <li>Double-check the IP — it may have changed after a reboot</li>
+                  </>
+                )}
               </ul>
             </div>
           )}
