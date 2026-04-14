@@ -7,7 +7,7 @@ import { ConnectDialog } from "@/components/connect-dialog";
 import {
   Coffee, Wifi, WifiOff, Loader2,
   Play, Square, Flame, Scale, Wind, RefreshCw, ArrowUp, LogOut,
-  Thermometer, Droplets, Weight
+  Thermometer, Droplets, Weight, Smartphone
 } from "lucide-react";
 import { getMachineInfo, getHistory, executeAction, listProfiles } from "@/lib/machine-api";
 import { getSavedIp, clearIp, useRequireConnection } from "@/lib/connection-store";
@@ -167,6 +167,13 @@ export default function DashboardPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <Link
+              href="/shortcuts"
+              title="Add to Home Screen"
+              className="inline-flex items-center gap-1.5 rounded-xl border border-white/[0.08] bg-transparent px-3 py-2 text-sm font-medium text-[#f5f0ea]/30 hover:bg-[#e8944a]/[0.08] hover:text-[#e8944a] hover:border-[#e8944a]/20 transition-all"
+            >
+              <Smartphone className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Add to Home</span>
+            </Link>
             <button
               onClick={load}
               className="inline-flex items-center gap-1.5 rounded-xl border border-white/[0.10] bg-transparent px-4 py-2 text-sm font-medium text-[#f5f0ea]/60 hover:bg-white/[0.05] hover:text-[#f5f0ea] transition-all"

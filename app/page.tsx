@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Coffee, Gauge, History, ArrowRight, Layers, GitCompare, Radio, Share2, Loader2, Star, GitFork } from "lucide-react";
 import { ConnectDialog } from "@/components/connect-dialog";
-import { getSavedIp } from "@/lib/connection-store";
+import { getSavedIp, saveIp, getIpFromUrlParam } from "@/lib/connection-store";
 import { testConnection } from "@/lib/machine-api";
 
 const FEATURES = [
@@ -24,6 +24,13 @@ export default function HomePage() {
   const [stars, setStars] = useState<number | null>(null);
 
   useEffect(() => {
+    // If ?ip= is in the URL, save it and go straight to dashboard
+    const urlIp = getIpFromUrlParam();
+    if (urlIp) {
+      saveIp(urlIp.trim());
+      router.replace("/dashboard");
+      return;
+    }
     const ip = getSavedIp();
     if (!ip) { setChecking(false); return; }
     testConnection(ip)

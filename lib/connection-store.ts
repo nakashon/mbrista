@@ -25,6 +25,12 @@ export function clearIp(): void {
   localStorage.removeItem(IP_KEY);
 }
 
+/** Reads the `?ip=` query param from the current URL (client-side only). */
+export function getIpFromUrlParam(): string {
+  if (typeof window === "undefined") return "";
+  return new URLSearchParams(window.location.search).get("ip") ?? "";
+}
+
 // React hook for machine connection state
 export function useConnection() {
   const [ip, setIpState] = useState<string>("");
