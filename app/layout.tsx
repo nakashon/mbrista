@@ -19,15 +19,15 @@ export const metadata: Metadata = {
   title: "mbrista — Meticulous Espresso Control Center",
   description:
     "The open community control plane for Meticulous espresso machines. Browse profiles, monitor shots, share data.",
-  manifest: "/mbrista/manifest.json",
+  manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "mbrista",
+    title: "metbarista",
   },
   icons: {
-    apple: "/mbrista/apple-touch-icon.png",
-    icon: "/mbrista/icon-192.png",
+    apple: "/apple-touch-icon.png",
+    icon: "/icon-192.png",
   },
 };
 
