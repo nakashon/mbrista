@@ -1,13 +1,38 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Radio, Loader2, WifiOff, Thermometer, Weight, Droplets, Timer } from "lucide-react";
+import { Radio, Loader2, WifiOff, Thermometer, Weight, Droplets, Timer, X, ChevronRight } from "lucide-react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from "recharts";
 import { connectSocket, disconnectSocket } from "@/lib/machine-socket";
 import { getSavedIp, useRequireConnection } from "@/lib/connection-store";
+import { ShotNoteEditor } from "@/components/shot-note-editor";
 import type { LiveStatus } from "@/lib/types";
+
+// ── Phase metadata ────────────────────────────────────────────────────────────
+
+interface PhaseInfo { label: string; color: string; pulse: boolean }
+
+const PHASE_MAP: Record<string, PhaseInfo> = {
+  idle:       { label: "Idle",       color: "text-[#f5f0ea]/40", pulse: false },
+  preheating: { label: "Preheating", color: "text-orange-400",   pulse: true  },
+  preparing:  { label: "Preparing",  color: "text-yellow-400",   pulse: false },
+  ready:      { label: "Ready",      color: "text-green-400",    pulse: false },
+  extracting: { label: "Brewing",    color: "text-blue-400",     pulse: true  },
+  brewing:    { label: "Brewing",    color: "text-blue-400",     pulse: true  },
+  drawdown:   { label: "Drawdown",   color: "text-cyan-400",     pulse: false },
+  purging:    { label: "Purging",    color: "text-purple-400",   pulse: false },
+  done:       { label: "Done",       color: "text-green-400",    pulse: false },
+};
+
+const TIMELINE_STEPS = ["Idle", "Preheating", "Ready", "Brewing", "Drawdown", "Purging", "Done"];
+
+function getPhaseInfo(name: string): PhaseInfo {
+  return PHASE_MAP[name.toLowerCase()] ?? { label: name, color: "text-[#e8944a]", pulse: false };
+}
+
+// ── Types ─────────────────────────────────────────────────────────────────────
 
 interface LivePoint {
   t: number;
@@ -16,6 +41,17 @@ interface LivePoint {
   weight: number | null;
 }
 
+interface ShotSummary {
+  durationSec: number;
+  peakPressure: number;
+  avgFlow: number;
+  finalWeight: number;
+  profile: string;
+  timestamp: number;
+}
+
+// ── Component ─────────────────────────────────────────────────────────────────
+
 export default function LivePage() {
   useRequireConnection();
   const [connected, setConnected] = useState(false);
@@ -23,6 +59,12 @@ export default function LivePage() {
   const [data, setData] = useState<LivePoint[]>([]);
   const [phase, setPhase] = useState<string>("idle");
   const startRef = useRef<number | null>(null);
+  const shotStartTimestampRef = useRef<number | null>(null);
+  const liveDataRef = useRef<LivePoint[]>([]);
+  const wasExtractingRef = useRef(false);
+  const [shotSummary, setShotSummary] = useState<ShotSummary | null>(null);
+  const [showNoteEditor, setShowNoteEditor] = useState(false);
+  const [summaryDismissed, setSummaryDismissed] = useState(false);
 
   const ip = getSavedIp();
 
@@ -36,21 +78,50 @@ export default function LivePage() {
         setStatus(s);
         setPhase(s.name ?? s.state ?? "idle");
 
-        // Record data whenever extracting (use sensors — machine doesn't put data in s.shot)
         if (s.extracting) {
-          if (!startRef.current) startRef.current = Date.now();
+          if (!startRef.current) {
+            // New shot starting — reset accumulators
+            startRef.current = Date.now();
+            shotStartTimestampRef.current = Math.floor(Date.now() / 1000);
+            liveDataRef.current = [];
+            setShotSummary(null);
+            setSummaryDismissed(false);
+            setShowNoteEditor(false);
+          }
+          wasExtractingRef.current = true;
           const t = Date.now() - startRef.current;
-          setData((prev) => [
-            ...prev.slice(-300),
-            {
-              t,
-              pressure: s.sensors?.p ?? null,
-              flow: s.sensors?.f ?? null,
-              weight: s.sensors?.w != null && s.sensors.w > 0 ? s.sensors.w : null,
-            },
-          ]);
-        } else if (s.name === "idle") {
-          startRef.current = null;
+          const point: LivePoint = {
+            t,
+            pressure: s.sensors?.p ?? null,
+            flow: s.sensors?.f ?? null,
+            weight: s.sensors?.w != null && s.sensors.w > 0 ? s.sensors.w : null,
+          };
+          liveDataRef.current = [...liveDataRef.current.slice(-300), point];
+          setData((prev) => [...prev.slice(-300), point]);
+        } else {
+          // Detect end of extraction
+          if (wasExtractingRef.current) {
+            const pts = liveDataRef.current;
+            if (pts.length > 0) {
+              const durationSec = Math.round(pts[pts.length - 1].t / 1000);
+              const pressures = pts.map((p) => p.pressure).filter((p): p is number => p != null);
+              const flows = pts.map((p) => p.flow).filter((f): f is number => f != null);
+              const weights = pts.map((p) => p.weight).filter((w): w is number => w != null);
+              setShotSummary({
+                durationSec,
+                peakPressure: pressures.length ? Math.max(...pressures) : 0,
+                avgFlow: flows.length ? flows.reduce((a, b) => a + b, 0) / flows.length : 0,
+                finalWeight: weights.length ? weights[weights.length - 1] : 0,
+                profile: s.loaded_profile ?? "Unknown",
+                timestamp: shotStartTimestampRef.current ?? Math.floor(Date.now() / 1000),
+              });
+              setSummaryDismissed(false);
+            }
+          }
+          wasExtractingRef.current = false;
+          if (s.name === "idle") {
+            startRef.current = null;
+          }
         }
       },
     });
@@ -62,12 +133,11 @@ export default function LivePage() {
   function clearData() {
     setData([]);
     startRef.current = null;
+    liveDataRef.current = [];
   }
 
-  const phaseColor =
-    phase === "idle" ? "text-[#f5f0ea]/25" :
-    phase?.toLowerCase() === "retracting" ? "text-blue-400" :
-    "text-[#e8944a]";
+  const phaseInfo = getPhaseInfo(phase);
+  const currentLabel = phaseInfo.label;
 
   return (
     <div className="min-h-screen bg-[#0c0a09]">
@@ -111,8 +181,8 @@ export default function LivePage() {
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
             <div className="rounded-2xl border border-white/[0.06] bg-[#161210] p-4 flex flex-col gap-1">
               <span className="text-xs text-[#f5f0ea]/35 uppercase tracking-wider">State</span>
-              <span className={`text-2xl font-bold font-mono capitalize ${phaseColor}`}>
-                {status?.name ?? phase}
+              <span className={`text-2xl font-bold font-mono ${phaseInfo.color} ${phaseInfo.pulse ? "animate-pulse" : ""}`}>
+                {phaseInfo.label}
               </span>
               {status?.loaded_profile && (
                 <span className="text-[10px] text-[#f5f0ea]/30 truncate mt-0.5">{status.loaded_profile}</span>
@@ -154,7 +224,7 @@ export default function LivePage() {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div className="rounded-2xl border border-white/[0.06] bg-[#161210] p-4 flex flex-col gap-1">
               <span className="text-xs text-[#f5f0ea]/35 uppercase tracking-wider">Phase</span>
-              <span className={`text-2xl font-bold font-mono capitalize ${phaseColor}`}>{phase}</span>
+              <span className={`text-2xl font-bold font-mono ${phaseInfo.color}`}>{phaseInfo.label}</span>
             </div>
             <div className="rounded-2xl border border-white/[0.06] bg-[#161210] p-4 flex flex-col gap-1">
               <span className="text-xs text-[#f5f0ea]/35 uppercase tracking-wider">Pressure</span>
@@ -254,6 +324,81 @@ export default function LivePage() {
             </ResponsiveContainer>
           )}
         </div>
+
+        {/* Phase timeline bar */}
+        <div className="rounded-2xl border border-white/[0.06] bg-[#161210] p-4">
+          <div className="flex items-center gap-1 overflow-x-auto pb-0.5">
+            {TIMELINE_STEPS.map((step, i) => {
+              const isActive = step === currentLabel;
+              const isPast = TIMELINE_STEPS.indexOf(currentLabel) > i;
+              return (
+                <div key={step} className="flex items-center gap-1 shrink-0">
+                  <div className={`rounded-lg px-2.5 py-1 text-xs font-medium transition-all ${
+                    isActive
+                      ? "bg-[#e8944a]/20 text-[#e8944a] border border-[#e8944a]/30"
+                      : isPast
+                      ? "bg-white/[0.06] text-[#f5f0ea]/50 border border-white/[0.06]"
+                      : "bg-transparent text-[#f5f0ea]/20 border border-transparent"
+                  }`}>
+                    {step}
+                  </div>
+                  {i < TIMELINE_STEPS.length - 1 && (
+                    <ChevronRight className={`h-3 w-3 shrink-0 ${isPast ? "text-[#f5f0ea]/30" : "text-[#f5f0ea]/10"}`} />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Last-shot summary banner */}
+        {shotSummary && !summaryDismissed && !status?.extracting && (
+          <div className="rounded-2xl border border-[#e8944a]/20 bg-[#161210] p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-semibold text-[#f5f0ea]">Last Shot Summary</p>
+              <button
+                onClick={() => setSummaryDismissed(true)}
+                className="text-[#f5f0ea]/30 hover:text-[#f5f0ea]/60 transition-colors"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {[
+                { label: "Duration",      value: `${shotSummary.durationSec}s` },
+                { label: "Peak Pressure", value: `${shotSummary.peakPressure.toFixed(1)} bar` },
+                { label: "Avg Flow",      value: `${shotSummary.avgFlow.toFixed(2)} ml/s` },
+                { label: "Final Weight",  value: `${shotSummary.finalWeight.toFixed(1)} g` },
+              ].map(({ label, value }) => (
+                <div key={label} className="rounded-xl border border-white/[0.06] bg-[#0c0a09] p-3">
+                  <p className="text-xs text-[#f5f0ea]/35 uppercase tracking-wider">{label}</p>
+                  <p className="text-lg font-bold font-mono text-[#f5f0ea] mt-0.5">{value}</p>
+                </div>
+              ))}
+            </div>
+            {shotSummary.profile && shotSummary.profile !== "Unknown" && (
+              <p className="text-xs text-[#f5f0ea]/35">
+                Profile: <span className="text-[#f5f0ea]/60">{shotSummary.profile}</span>
+              </p>
+            )}
+            {!showNoteEditor ? (
+              <button
+                onClick={() => setShowNoteEditor(true)}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-white/[0.10] px-4 py-2 text-sm font-medium text-[#f5f0ea]/60 hover:bg-white/[0.05] hover:text-[#f5f0ea] transition-all"
+              >
+                Save note
+              </button>
+            ) : (
+              <div className="border-t border-white/[0.06] pt-4">
+                <ShotNoteEditor
+                  timestamp={shotSummary.timestamp}
+                  onSave={() => setShowNoteEditor(false)}
+                />
+              </div>
+            )}
+          </div>
+        )}
+
       </div>
     </div>
   );

@@ -1,8 +1,12 @@
+"use client";
+
 import Link from "next/link";
-import { Clock, Weight, Gauge, Droplets } from "lucide-react";
+import { Clock, Weight, Gauge, Droplets, Star } from "lucide-react";
 import { formatDistanceToNow, format } from "date-fns";
+import { useEffect, useState } from "react";
 import type { ShotEntry } from "@/lib/types";
 import { computeShotStats } from "@/lib/machine-api";
+import { getShotNote } from "@/lib/shot-notes";
 
 interface ShotCardProps {
   shot: ShotEntry;
@@ -14,6 +18,12 @@ export function ShotCard({ shot, href, compact = false }: ShotCardProps) {
   const stats = computeShotStats(shot.data);
   const date = new Date(shot.time * 1000);
   const accent = shot.profile?.display?.accentColor ?? "#e8944a";
+  const [rating, setRating] = useState<number | null>(null);
+
+  useEffect(() => {
+    const saved = getShotNote(shot.time);
+    if (saved?.rating) setRating(saved.rating);
+  }, [shot.time]);
 
   const inner = (
     <div className="group flex items-center gap-4 rounded-xl border border-white/[0.05] bg-[#161210] px-4 py-3.5 hover:border-white/[0.10] hover:bg-[#1e1b16] transition-all cursor-pointer">
@@ -26,6 +36,18 @@ export function ShotCard({ shot, href, compact = false }: ShotCardProps) {
           </p>
         )}
       </div>
+      {rating && rating > 0 && (
+        <div className="hidden sm:flex items-center gap-0.5 shrink-0">
+          {[1, 2, 3, 4, 5].map((s) => (
+            <Star
+              key={s}
+              className="h-3 w-3"
+              fill={rating >= s ? "#e8944a" : "none"}
+              stroke={rating >= s ? "#e8944a" : "rgba(245,240,234,0.15)"}
+            />
+          ))}
+        </div>
+      )}
       {!compact && (
         <div className="hidden sm:flex items-center gap-4 text-xs font-mono text-[#f5f0ea]/40 shrink-0">
           <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{stats.durationSec}s</span>

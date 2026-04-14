@@ -5,7 +5,8 @@ import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { format } from "date-fns";
 import { ShotChart } from "@/components/charts/shot-chart";
-import { Loader2, ArrowLeft, Clock, Weight, Gauge, Droplets, Thermometer, Layers } from "lucide-react";
+import { ShotNoteEditor } from "@/components/shot-note-editor";
+import { Loader2, ArrowLeft, Clock, Weight, Gauge, Droplets, Thermometer, Layers, NotebookPen } from "lucide-react";
 import { getHistory, computeShotStats } from "@/lib/machine-api";
 import type { ShotEntry } from "@/lib/types";
 
@@ -146,6 +147,15 @@ function ShotDetailContent() {
             </Link>
           </div>
         )}
+
+        {/* Notes & Rating */}
+        <div className="rounded-2xl border border-white/[0.06] bg-[#161210] p-5 space-y-4">
+          <div className="flex items-center gap-2">
+            <NotebookPen className="h-4 w-4 text-[#f5f0ea]/30" />
+            <p className="text-sm font-semibold text-[#f5f0ea]">Tasting Notes</p>
+          </div>
+          <ShotNoteEditor timestamp={shot.time} />
+        </div>
 
         {/* Raw JSON */}
         <div>
