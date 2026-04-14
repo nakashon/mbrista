@@ -21,7 +21,7 @@ const HOW_TO_FIND = [
   {
     icon: Monitor,
     title: "Check the machine screen",
-    desc: 'On the machine itself, navigate to Settings → WiFi. The IP address is shown there (e.g. 192.168.86.28).',
+    desc: 'On the machine itself, navigate to Settings → WiFi. The IP address is shown there (e.g. 192.168.1.42).',
   },
   {
     icon: Router,
@@ -102,14 +102,14 @@ export function ConnectDialog({ open, onConnected, onCancel }: ConnectDialogProp
           )}
 
           {status === "error" && (
-            <div className="rounded-xl bg-red-500/10 border border-red-500/20 px-3 py-2.5 text-sm text-red-400 space-y-1">
+            <div className="rounded-xl bg-red-500/10 border border-red-500/20 px-3 py-2.5 text-sm text-red-400 space-y-1.5">
               <div className="flex items-center gap-2">
                 <AlertCircle className="h-4 w-4 shrink-0" />
                 <span>{errorMsg}</span>
               </div>
               <ul className="text-xs text-red-400/70 list-disc list-inside space-y-0.5 pl-1">
+                <li><strong className="text-red-400">Phone on the same WiFi?</strong> This is the #1 cause — cellular or guest networks won&apos;t work</li>
                 <li>Is the machine powered on and showing WiFi connected?</li>
-                <li>Are you on the same WiFi network?</li>
                 <li>Double-check the IP — it may have changed after a reboot</li>
               </ul>
             </div>
