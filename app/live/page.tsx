@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Radio, Loader2, WifiOff } from "lucide-react";
+import { Radio, Loader2, WifiOff, Thermometer, Weight, Droplets } from "lucide-react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from "recharts";
@@ -108,8 +108,44 @@ export default function LivePage() {
           </div>
         </div>
 
-        {/* Status grid */}
-        {status && (
+        {/* Always-on sensor tiles: state + temp + weight + pressure */}
+        {connected && (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="rounded-2xl border border-white/[0.06] bg-[#161210] p-4 flex flex-col gap-1">
+              <span className="text-xs text-[#f5f0ea]/35 uppercase tracking-wider">State</span>
+              <span className={`text-2xl font-bold font-mono capitalize ${phaseColor}`}>
+                {status?.name ?? phase}
+              </span>
+              {status?.loaded_profile && (
+                <span className="text-[10px] text-[#f5f0ea]/30 truncate mt-0.5">{status.loaded_profile}</span>
+              )}
+            </div>
+            <div className="rounded-2xl border border-white/[0.06] bg-[#161210] p-4 flex flex-col gap-1">
+              <span className="text-xs text-[#e8944a]/60 uppercase tracking-wider flex items-center gap-1"><Thermometer className="h-3 w-3" />Temp</span>
+              <span className="text-2xl font-bold font-mono text-[#f5f0ea]">
+                {status?.sensors?.t != null ? status.sensors.t.toFixed(1) : "—"}
+                <span className="text-sm font-normal text-[#f5f0ea]/35"> °C</span>
+              </span>
+            </div>
+            <div className="rounded-2xl border border-white/[0.06] bg-[#161210] p-4 flex flex-col gap-1">
+              <span className="text-xs text-[#60a5fa]/60 uppercase tracking-wider flex items-center gap-1"><Weight className="h-3 w-3" />Weight</span>
+              <span className="text-2xl font-bold font-mono text-[#f5f0ea]">
+                {status?.sensors?.w != null ? status.sensors.w.toFixed(1) : "—"}
+                <span className="text-sm font-normal text-[#f5f0ea]/35"> g</span>
+              </span>
+            </div>
+            <div className="rounded-2xl border border-white/[0.06] bg-[#161210] p-4 flex flex-col gap-1">
+              <span className="text-xs text-[#22d3ee]/60 uppercase tracking-wider flex items-center gap-1"><Droplets className="h-3 w-3" />Pressure</span>
+              <span className="text-2xl font-bold font-mono text-[#f5f0ea]">
+                {status?.sensors?.p != null ? status.sensors.p.toFixed(2) : "—"}
+                <span className="text-sm font-normal text-[#f5f0ea]/35"> bar</span>
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* Shot-specific status grid (during extraction) */}
+        {status?.shot && (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div className="rounded-2xl border border-white/[0.06] bg-[#161210] p-4 flex flex-col gap-1">
               <span className="text-xs text-[#f5f0ea]/35 uppercase tracking-wider">Phase</span>
@@ -118,22 +154,22 @@ export default function LivePage() {
             <div className="rounded-2xl border border-white/[0.06] bg-[#161210] p-4 flex flex-col gap-1">
               <span className="text-xs text-[#f5f0ea]/35 uppercase tracking-wider">Pressure</span>
               <span className="text-2xl font-bold font-mono text-[#f5f0ea]">
-                {status.shot?.pressure?.toFixed(2) ?? "—"}
+                {status?.shot?.pressure?.toFixed(2) ?? "—"}
                 <span className="text-sm font-normal text-[#f5f0ea]/35"> bar</span>
               </span>
             </div>
             <div className="rounded-2xl border border-white/[0.06] bg-[#161210] p-4 flex flex-col gap-1">
               <span className="text-xs text-[#f5f0ea]/35 uppercase tracking-wider">Flow</span>
               <span className="text-2xl font-bold font-mono text-[#f5f0ea]">
-                {status.shot?.flow?.toFixed(2) ?? "—"}
+                {status?.shot?.flow?.toFixed(2) ?? "—"}
                 <span className="text-sm font-normal text-[#f5f0ea]/35"> ml/s</span>
               </span>
             </div>
             <div className="rounded-2xl border border-white/[0.06] bg-[#161210] p-4 flex flex-col gap-1">
               <span className="text-xs text-[#f5f0ea]/35 uppercase tracking-wider">Weight</span>
               <span className="text-2xl font-bold font-mono text-[#f5f0ea]">
-                {status.shot?.weight != null && status.shot.weight > 0
-                  ? status.shot.weight.toFixed(1)
+                {status?.shot?.weight != null && status.shot!.weight > 0
+                  ? status.shot!.weight.toFixed(1)
                   : "—"}
                 <span className="text-sm font-normal text-[#f5f0ea]/35"> g</span>
               </span>
