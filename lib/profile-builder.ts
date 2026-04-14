@@ -207,7 +207,7 @@ export function stagesToOEPF(basics: ProfileBasics, stages: StageConfig[]): Prof
   return {
     id,
     name: basics.name || "Untitled",
-    author: basics.author || "mbrista",
+    author: basics.author || "metbarista",
     author_id: id,
     previous_authors: [],
     temperature: basics.temperature,

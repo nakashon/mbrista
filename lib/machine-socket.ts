@@ -20,7 +20,7 @@ let isConnecting = false;
 
 function getMachineIp(): string | null {
   if (typeof window === "undefined") return null;
-  return localStorage.getItem("mbrista_machine_ip");
+  return localStorage.getItem("metbarista_machine_ip");
 }
 
 export async function connectSocket(

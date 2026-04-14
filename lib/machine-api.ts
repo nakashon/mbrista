@@ -21,7 +21,7 @@ const DEFAULT_TIMEOUT_MS = 8000;
 
 function getBaseUrl(): string {
   if (typeof window === "undefined") return "";
-  const ip = localStorage.getItem("mbrista_machine_ip");
+  const ip = localStorage.getItem("metbarista_machine_ip");
   return ip ? `http://${ip}` : "";
 }
 

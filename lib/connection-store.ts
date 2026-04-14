@@ -7,7 +7,7 @@ import { useState, useEffect } from "react";
 import { testConnection } from "./machine-api";
 import type { ConnectionStatus, MachineInfo } from "./types";
 
-const IP_KEY = "mbrista_machine_ip";
+const IP_KEY = "metbarista_machine_ip";
 
 export function getSavedIp(): string {
   if (typeof window === "undefined") return "";

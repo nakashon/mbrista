@@ -16,7 +16,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "mbrista — Meticulous Espresso Control Center",
+  title: "metbarista — Precision Espresso Control",
   description:
     "The open community control plane for Meticulous espresso machines. Browse profiles, monitor shots, share data.",
   manifest: "/manifest.json",
@@ -59,7 +59,7 @@ export default function RootLayout({
         </main>
         {/* Footer — desktop only */}
         <footer className="hidden md:block border-t border-white/[0.05] py-5 text-center text-xs text-[#f5f0ea]/25">
-          mbrista — open source, always free ·{" "}
+          metbarista — open source, always free ·{" "}
           <a
             href="https://discord.gg/w48ha2h3"
             target="_blank"

@@ -14,19 +14,19 @@ interface ConnectDialogProps {
 
 const HOW_TO_FIND = [
   {
+    icon: Smartphone,
+    title: "Meticulous app → Settings → Machine Info",
+    desc: 'Open the Meticulous app on your phone. Tap Settings (bottom right) → Machine Info. The IP address is listed there.',
+  },
+  {
     icon: Monitor,
     title: "Check the machine screen",
-    desc: 'On the Meticulous, navigate to Settings → WiFi. The IP address is shown there (e.g. 192.168.1.42).',
+    desc: 'On the machine itself, navigate to Settings → WiFi. The IP address is shown there (e.g. 192.168.1.42).',
   },
   {
     icon: Router,
-    title: "Check your router",
-    desc: 'Open your router admin page (usually 192.168.1.1 or 192.168.0.1). Look for a device named "Meticulous" in the connected devices list.',
-  },
-  {
-    icon: Smartphone,
-    title: "Use a network scanner",
-    desc: 'Apps like "Fing" (iOS/Android) scan your WiFi and list all devices with their IPs in seconds.',
+    title: "Check your router admin page",
+    desc: 'Open your router (usually 192.168.1.1 or 192.168.0.1). Look for a device named "Meticulous" in the connected devices list.',
   },
 ];
 
@@ -73,7 +73,7 @@ export function ConnectDialog({ open, onConnected, onCancel }: ConnectDialogProp
             <Wifi className="h-4 w-4 text-[#e8944a] shrink-0 mt-0.5" />
             <p className="text-xs text-[#f5f0ea]/60 leading-relaxed">
               <span className="text-[#e8944a] font-medium">Same WiFi required.</span>{" "}
-              Your computer and the Meticulous must be on the same network — mbrista connects directly, no cloud involved.
+              Your computer and the Meticulous must be on the same network — metbarista connects directly, no cloud involved.
             </p>
           </div>
         </div>

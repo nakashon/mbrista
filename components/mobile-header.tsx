@@ -5,7 +5,7 @@ import { ConnectionDot } from "./connection-dot";
 
 /**
  * Lightweight mobile top bar — shown only on mobile (md: hidden).
- * Displays the mbrista logo + connection dot without full navbar.
+ * Displays the metbarista logo + connection dot without full navbar.
  * Desktop uses the full Navbar component instead.
  */
 export function MobileHeader() {
@@ -15,7 +15,7 @@ export function MobileHeader() {
         <div className="flex h-6 w-6 items-center justify-center rounded-md bg-[#F5C444]/15 text-[#F5C444]">
           <Coffee className="h-3 w-3" />
         </div>
-        <span className="font-semibold text-sm text-[#f5f0ea] tracking-tight">mbrista</span>
+        <span className="font-semibold text-sm text-[#f5f0ea] tracking-tight">metbarista</span>
       </Link>
       <ConnectionDot />
     </header>

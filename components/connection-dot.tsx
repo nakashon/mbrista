@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { WifiOff, Loader2 } from "lucide-react";
-import { getSavedIp } from "@/lib/connection-store";
+import { WifiOff, Loader2, X } from "lucide-react";
+import { getSavedIp, clearIp } from "@/lib/connection-store";
 import { testConnection } from "@/lib/machine-api";
 import type { ConnectionStatus } from "@/lib/types";
 
@@ -20,6 +20,15 @@ export function ConnectionDot() {
       .catch(() => setStatus("error"));
   }, []);
 
+  function handleDisconnect(e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    clearIp();
+    setStatus("disconnected");
+    setMachineName("");
+    window.location.href = "/";
+  }
+
   const label = status === "connected"   ? machineName || "Connected"
               : status === "connecting"  ? "Connecting…"
               : status === "error"       ? "Reconnect"
@@ -33,21 +42,34 @@ export function ConnectionDot() {
   };
 
   return (
-    <Link href="/dashboard"
-      className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-all shrink-0 ${pill[status]}`}>
+    <div className="flex items-center gap-1">
+      <Link href="/dashboard"
+        className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-all shrink-0 ${pill[status]}`}>
 
-      {status === "connecting" && <Loader2 className="h-3 w-3 animate-spin" />}
+        {status === "connecting" && <Loader2 className="h-3 w-3 animate-spin" />}
 
+        {status === "connected" && (
+          <span className="relative flex h-2 w-2 shrink-0">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#4ade80] opacity-60" />
+            <span className="relative inline-flex h-2 w-2 rounded-full bg-[#4ade80]" />
+          </span>
+        )}
+
+        {(status === "error" || status === "disconnected") && <WifiOff className="h-3 w-3" />}
+
+        <span className="hidden sm:inline max-w-28 truncate">{label}</span>
+      </Link>
+
+      {/* Disconnect button — only when connected */}
       {status === "connected" && (
-        <span className="relative flex h-2 w-2 shrink-0">
-          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#4ade80] opacity-60" />
-          <span className="relative inline-flex h-2 w-2 rounded-full bg-[#4ade80]" />
-        </span>
+        <button
+          onClick={handleDisconnect}
+          title="Disconnect machine"
+          className="h-6 w-6 flex items-center justify-center rounded-full text-[#f5f0ea]/25 hover:text-[#f5f0ea]/60 hover:bg-white/[0.06] transition-all"
+        >
+          <X className="h-3 w-3" />
+        </button>
       )}
-
-      {(status === "error" || status === "disconnected") && <WifiOff className="h-3 w-3" />}
-
-      <span className="hidden sm:inline max-w-28 truncate">{label}</span>
-    </Link>
+    </div>
   );
 }
