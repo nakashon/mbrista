@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Loader2, Layers, Plus } from "lucide-react";
 import { listProfiles, loadProfileById } from "@/lib/machine-api";
-import { getSavedIp } from "@/lib/connection-store";
+import { getSavedIp, useRequireConnection } from "@/lib/connection-store";
 import { ProfileCard } from "@/components/profile-card";
 import type { Profile } from "@/lib/types";
 
@@ -13,6 +13,7 @@ const STYLE_FILTERS = ["All", "flow", "pressure", "power"];
 type Toast = { type: "success" | "error"; msg: string } | null;
 
 export default function ProfilesPage() {
+  useRequireConnection();
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("All");

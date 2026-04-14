@@ -6,7 +6,7 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from "recharts";
 import { connectSocket, disconnectSocket } from "@/lib/machine-socket";
-import { getSavedIp } from "@/lib/connection-store";
+import { getSavedIp, useRequireConnection } from "@/lib/connection-store";
 import type { LiveStatus } from "@/lib/types";
 
 interface LivePoint {
@@ -17,6 +17,7 @@ interface LivePoint {
 }
 
 export default function LivePage() {
+  useRequireConnection();
   const [connected, setConnected] = useState(false);
   const [status, setStatus] = useState<LiveStatus | null>(null);
   const [data, setData] = useState<LivePoint[]>([]);

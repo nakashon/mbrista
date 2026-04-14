@@ -4,11 +4,12 @@ import { useEffect, useState } from "react";
 import { format } from "date-fns";
 import { Loader2, Coffee, WifiOff, RefreshCw } from "lucide-react";
 import { getHistory } from "@/lib/machine-api";
-import { getSavedIp } from "@/lib/connection-store";
+import { getSavedIp, useRequireConnection } from "@/lib/connection-store";
 import { ShotCard } from "@/components/shot-card";
 import type { ShotEntry } from "@/lib/types";
 
 export default function HistoryPage() {
+  useRequireConnection();
   const [shots, setShots] = useState<ShotEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

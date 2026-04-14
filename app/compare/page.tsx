@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { GitCompare, Loader2, X } from "lucide-react";
 import { getHistory, computeShotStats, downsampleFrames } from "@/lib/machine-api";
-import { getSavedIp } from "@/lib/connection-store";
+import { getSavedIp, useRequireConnection } from "@/lib/connection-store";
 import type { ShotEntry } from "@/lib/types";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -15,6 +15,7 @@ const COMPARE_COLORS = ["#3b82f6", "#f97316", "#22c55e", "#a855f7", "#ec4899"];
 type Metric = "pressure" | "flow";
 
 export default function ComparePage() {
+  useRequireConnection();
   const [allShots, setAllShots] = useState<ShotEntry[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);

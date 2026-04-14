@@ -4,12 +4,13 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Upload, FileJson, CheckCircle2, AlertCircle, Loader2, ArrowRight, Coffee } from "lucide-react";
 import { loadProfileInline } from "@/lib/machine-api";
-import { getSavedIp } from "@/lib/connection-store";
+import { getSavedIp, useRequireConnection } from "@/lib/connection-store";
 import type { Profile } from "@/lib/types";
 
 type Step = "input" | "preview" | "loading" | "done" | "error";
 
 export default function ImportPage() {
+  useRequireConnection();
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
   const [step, setStep] = useState<Step>("input");

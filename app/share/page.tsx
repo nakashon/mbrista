@@ -7,6 +7,7 @@ import { ProfileCurvePreview } from "@/components/charts/profile-curve-preview";
 import { ShotChart } from "@/components/charts/shot-chart";
 import { ArrowLeft, Loader2, GitFork, Share2, Code, Thermometer, Weight, Clock, Droplets, Gauge } from "lucide-react";
 import { listProfiles, getHistory, computeShotStats } from "@/lib/machine-api";
+import { useRequireConnection } from "@/lib/connection-store";
 import type { Profile, ShotEntry } from "@/lib/types";
 import { format } from "date-fns";
 
@@ -287,6 +288,7 @@ function ShareContent() {
 }
 
 export default function SharePage() {
+  useRequireConnection();
   return (
     <Suspense fallback={
       <div className="min-h-screen bg-[#0c0a09] flex items-center justify-center">

@@ -9,11 +9,12 @@ import {
   Play, Square, Flame, Scale, Wind, RefreshCw, ArrowUp
 } from "lucide-react";
 import { getMachineInfo, getHistory, executeAction, listProfiles } from "@/lib/machine-api";
-import { getSavedIp } from "@/lib/connection-store";
+import { getSavedIp, useRequireConnection } from "@/lib/connection-store";
 import type { MachineInfo, ShotEntry, Profile } from "@/lib/types";
 import type { ActionType } from "@/lib/types";
 
 export default function DashboardPage() {
+  useRequireConnection();
   const [showConnect, setShowConnect] = useState(false);
   const [loading, setLoading] = useState(true);
   const [machine, setMachine] = useState<MachineInfo | null>(null);

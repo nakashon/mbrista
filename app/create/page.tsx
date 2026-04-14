@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useRequireConnection } from "@/lib/connection-store";
 import { Coffee, Plus } from "lucide-react";
 import {
   TEMPLATES, DEFAULT_BASICS, newStage,
@@ -133,6 +134,7 @@ function TemplateStep({
 // ─── Page root ────────────────────────────────────────────────────────────────
 
 export default function CreatePage() {
+  useRequireConnection();
   const router = useRouter();
   const [step, setStep] = useState<Step>("Template");
   const [basics, setBasics] = useState<ProfileBasics>(DEFAULT_BASICS);

@@ -4,6 +4,7 @@
  */
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { testConnection } from "./machine-api";
 import type { ConnectionStatus, MachineInfo } from "./types";
 
@@ -74,4 +75,17 @@ export function useConnection() {
   }
 
   return { ip, status, machineInfo, error, connect, disconnect, refresh };
+}
+
+/**
+ * Hook that redirects to landing if no machine is saved.
+ * Use at the top of every protected page.
+ */
+export function useRequireConnection() {
+  const router = useRouter();
+  useEffect(() => {
+    if (!getSavedIp()) {
+      router.replace("/");
+    }
+  }, [router]);
 }

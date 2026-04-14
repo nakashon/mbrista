@@ -4,6 +4,7 @@ import "./globals.css";
 import { Navbar } from "@/components/navbar";
 import { MobileHeader } from "@/components/mobile-header";
 import { BottomNav } from "@/components/bottom-nav";
+import { FeedbackButton } from "@/components/feedback-button";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -71,6 +72,8 @@ export default function RootLayout({
         </footer>
         {/* Bottom nav — mobile/tablet only */}
         <BottomNav />
+        {/* Feedback — visible after machine connected */}
+        <FeedbackButton />
       </body>
     </html>
   );
