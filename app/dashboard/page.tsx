@@ -139,12 +139,15 @@ export default function DashboardPage() {
     );
   }
 
+  const isPreheating = liveStatus?.name === "preheating";
+  const isExtracting = liveStatus?.extracting;
+
   const ACTIONS: { action: ActionType; label: string; icon: React.ElementType; style: "primary" | "danger" | "outline" }[] = [
-    { action: "preheat", label: "Preheat",    icon: Flame,   style: "outline" },
+    { action: "preheat", label: isPreheating ? "Preheating…" : "Preheat", icon: Flame,   style: "outline" },
     { action: "tare",    label: "Tare Scale", icon: Scale,   style: "outline" },
     { action: "purge",   label: "Purge",      icon: Wind,    style: "outline" },
     { action: "raise",   label: "Raise",      icon: ArrowUp, style: "outline" },
-    { action: "start",   label: "Start Shot", icon: Play,    style: "primary" },
+    { action: "start",   label: isExtracting ? "Extracting…" : "Start Shot", icon: Play, style: "primary" },
     { action: "stop",    label: "Stop",       icon: Square,  style: "danger"  },
   ];
 
@@ -270,12 +273,16 @@ export default function DashboardPage() {
               const cls =
                 style === "danger"
                   ? `${base} bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20`
+                  : action === "preheat" && isPreheating
+                  ? `${base} bg-[#e8944a]/15 text-[#e8944a] border border-[#e8944a]/30`
                   : `${base} border border-white/[0.08] text-[#f5f0ea]/55 hover:bg-white/[0.05] hover:text-[#f5f0ea]`;
               return (
                 <button key={action} onClick={() => doAction(action)}
                   disabled={actionLoading !== null} className={cls}>
                   {actionLoading === action
                     ? <Loader2 className="h-4 w-4 animate-spin" />
+                    : action === "preheat" && isPreheating
+                    ? <Flame className="h-4 w-4 animate-pulse" />
                     : <Icon className="h-4 w-4" />}
                   {label}
                 </button>
