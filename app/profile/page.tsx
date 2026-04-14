@@ -4,6 +4,7 @@ import { useEffect, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { ProfileCurvePreview } from "@/components/charts/profile-curve-preview";
+import { ProfileFingerprint } from "@/components/charts/profile-fingerprint";
 import { Loader2, ArrowLeft, Thermometer, Weight, User, GitFork, Code } from "lucide-react";
 import { listProfiles, getHistory, loadProfileById, computeShotStats } from "@/lib/machine-api";
 import { ShotChart } from "@/components/charts/shot-chart";
@@ -77,22 +78,26 @@ function ProfileDetailContent() {
 
         {/* Profile header card */}
         <div className="rounded-2xl border border-white/[0.06] bg-[#161210] overflow-hidden">
-          <div className="h-[3px]" style={{ backgroundColor: accent }} />
-          <div className="p-6">
+          {/* Hero: fingerprint banner (always shown for visual richness) */}
+          <div className="relative h-28 bg-[#0c0a09] overflow-hidden">
+            <ProfileFingerprint profile={profile} height={112} accent={accent} />
+            <div className="absolute inset-0 bg-gradient-to-t from-[#161210] via-[#161210]/30 to-transparent" />
+            {/* Profile name overlay */}
+            <div className="absolute bottom-0 inset-x-0 px-6 pb-3">
+              <h1 className="text-2xl font-bold text-[#f5f0ea] leading-tight drop-shadow">{profile.name}</h1>
+              <p className="text-sm text-[#f5f0ea]/50 flex items-center gap-1.5 mt-0.5">
+                <User className="h-3.5 w-3.5" />{profile.author}
+              </p>
+            </div>
+          </div>
+          <div className="p-6 pt-4">
             <div className="flex items-start justify-between gap-4">
               <div className="flex-1 min-w-0 space-y-1">
-                <h1 className="text-2xl font-bold text-[#f5f0ea] leading-tight">{profile.name}</h1>
-                <p className="text-sm text-[#f5f0ea]/40 flex items-center gap-1.5">
-                  <User className="h-3.5 w-3.5" />{profile.author}
-                </p>
                 {profile.display?.description && (
-                  <p className="text-sm text-[#f5f0ea]/50 mt-2 max-w-2xl leading-relaxed">
+                  <p className="text-sm text-[#f5f0ea]/50 max-w-2xl leading-relaxed">
                     {profile.display.description}
                   </p>
                 )}
-              </div>
-              <div className="shrink-0 hidden sm:block opacity-80">
-                <ProfileCurvePreview profile={profile} width={160} height={70} accentColor={accent} />
               </div>
             </div>
 

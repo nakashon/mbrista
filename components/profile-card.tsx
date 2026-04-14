@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Thermometer, Weight, Layers } from "lucide-react";
 import type { Profile } from "@/lib/types";
 import { ProfileCurvePreview } from "./charts/profile-curve-preview";
+import { ProfileFingerprint } from "./charts/profile-fingerprint";
 import { getSavedIp } from "@/lib/connection-store";
 
 interface ProfileCardProps {
@@ -48,15 +49,15 @@ export function ProfileCard({ profile, href, onLoad }: ProfileCardProps) {
           </div>
         </div>
       ) : (
-        <>
-          <div className="h-[3px]" style={{ backgroundColor: accent }} />
-          <div className="px-4 pt-3 flex justify-end opacity-60 group-hover:opacity-100 transition-opacity">
-            <ProfileCurvePreview profile={profile} width={72} height={32} accentColor={accent} />
-          </div>
-        </>
+        /* No official photo → generative fingerprint */
+        <div className="relative h-36 overflow-hidden bg-[#0c0a09]">
+          <ProfileFingerprint profile={profile} height={144} accent={accent} />
+          {/* subtle dark overlay so card text stays readable */}
+          <div className="absolute inset-0 bg-gradient-to-t from-[#161210] via-transparent to-transparent opacity-60" />
+        </div>
       )}
 
-      <div className={`px-4 pb-4 space-y-3 ${imageUrl ? "" : "pt-1"}`}>
+      <div className={`px-4 pb-4 space-y-3 ${imageUrl ? "" : "pt-2"}`}>
         {/* Header row */}
         <div className="min-w-0">
           <h3 className="font-semibold text-sm text-[#f5f0ea] truncate group-hover:text-[#e8944a] transition-colors leading-snug">
