@@ -235,10 +235,19 @@ export interface MachineConnection {
 // ============================================================
 
 export interface LiveStatus {
+  name: string;         // machine state name e.g. "idle", "preheating", "extracting"
   state: string;
   profile_time: number;
+  loaded_profile?: string;
+  extracting?: boolean;
   shot?: ShotDataPoint;
-  sensors?: Partial<ShotSensors>;
+  sensors?: {
+    p?: number;  // pressure bar
+    f?: number;  // flow ml/s
+    w?: number;  // weight g
+    t?: number;  // boiler temp °C
+    g?: number;  // piston position
+  };
 }
 
 export interface LiveTemperatures {

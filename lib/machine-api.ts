@@ -107,10 +107,9 @@ export async function getHistory(): Promise<ShotEntry[]> {
 // ── Actions ──────────────────────────────────────────────────
 
 export async function executeAction(action: ActionType): Promise<void> {
-  await apiFetch<unknown>("/action", {
+  await apiFetch<unknown>(`/action/${action}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name: action }),
   });
 }
 

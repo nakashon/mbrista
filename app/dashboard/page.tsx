@@ -1,16 +1,18 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { format } from "date-fns";
 import { ConnectDialog } from "@/components/connect-dialog";
 import {
   Coffee, Wifi, WifiOff, Loader2,
-  Play, Square, Flame, Scale, Wind, RefreshCw, ArrowUp, LogOut
+  Play, Square, Flame, Scale, Wind, RefreshCw, ArrowUp, LogOut,
+  Thermometer, Droplets, Weight
 } from "lucide-react";
 import { getMachineInfo, getHistory, executeAction, listProfiles } from "@/lib/machine-api";
 import { getSavedIp, clearIp, useRequireConnection } from "@/lib/connection-store";
-import type { MachineInfo, ShotEntry, Profile } from "@/lib/types";
+import { connectSocket, disconnectSocket } from "@/lib/machine-socket";
+import type { MachineInfo, ShotEntry, Profile, LiveStatus } from "@/lib/types";
 import type { ActionType } from "@/lib/types";
 
 export default function DashboardPage() {
@@ -22,6 +24,7 @@ export default function DashboardPage() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<ActionType | null>(null);
+  const [liveStatus, setLiveStatus] = useState<LiveStatus | null>(null);
 
   const ip = getSavedIp();
 
@@ -49,6 +52,13 @@ export default function DashboardPage() {
     else setLoading(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Live socket stats
+  useEffect(() => {
+    if (!ip) return;
+    connectSocket({ status: (s) => setLiveStatus(s) }).catch(() => {});
+    return () => { disconnectSocket(); };
+  }, [ip]);
 
   async function doAction(action: ActionType) {
     setActionLoading(action);
@@ -182,18 +192,40 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Quick stats */}
+          {/* Live stats */}
           <div className="rounded-2xl border border-white/[0.06] bg-[#161210] p-5 flex flex-col gap-3">
-            <div className="rounded-2xl border border-white/[0.06] bg-[#0c0a09] p-4 flex flex-col gap-1">
-              <span className="text-xs text-[#f5f0ea]/35 uppercase tracking-wider">Profiles</span>
-              <span className="text-2xl font-bold font-mono text-[#f5f0ea]">{profiles.length}</span>
+            {/* Machine state badge */}
+            <div className="flex items-center gap-2">
+              <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${
+                liveStatus?.name === "idle"        ? "bg-white/[0.06] text-[#f5f0ea]/50" :
+                liveStatus?.name === "preheating"  ? "bg-[#e8944a]/15 text-[#e8944a]" :
+                liveStatus?.extracting             ? "bg-[#4ade80]/15 text-[#4ade80]" :
+                liveStatus                         ? "bg-blue-500/15 text-blue-400" :
+                "bg-white/[0.04] text-[#f5f0ea]/20"
+              }`}>
+                <span className={`h-1.5 w-1.5 rounded-full ${
+                  liveStatus?.extracting ? "bg-[#4ade80] animate-pulse" :
+                  liveStatus?.name === "preheating" ? "bg-[#e8944a] animate-pulse" :
+                  "bg-current opacity-60"
+                }`} />
+                {liveStatus?.name ?? "connecting…"}
+              </span>
+              {liveStatus?.loaded_profile && (
+                <span className="text-xs text-[#f5f0ea]/30 truncate">{liveStatus.loaded_profile}</span>
+              )}
             </div>
-            {recentShots[0] && (
-              <div className="rounded-2xl border border-white/[0.06] bg-[#0c0a09] p-4 flex flex-col gap-1">
-                <span className="text-xs text-[#f5f0ea]/35 uppercase tracking-wider">Last Shot</span>
-                <span className="text-sm font-medium text-[#f5f0ea] truncate">{recentShots[0].name}</span>
-              </div>
-            )}
+
+            {/* Sensor readings */}
+            <div className="grid grid-cols-3 gap-2">
+              <StatTile icon={Thermometer} label="Temp" value={liveStatus?.sensors?.t != null ? `${liveStatus.sensors.t.toFixed(1)}°` : "—"} color="#e8944a" />
+              <StatTile icon={Weight}      label="Weight" value={liveStatus?.sensors?.w != null ? `${liveStatus.sensors.w.toFixed(1)}g` : "—"} color="#60a5fa" />
+              <StatTile icon={Droplets}    label="Pressure" value={liveStatus?.sensors?.p != null ? `${liveStatus.sensors.p.toFixed(1)}b` : "—"} color="#22d3ee" />
+            </div>
+
+            <div className="border-t border-white/[0.04] pt-2 flex items-center justify-between">
+              <span className="text-xs text-[#f5f0ea]/25">Profiles on machine</span>
+              <span className="text-sm font-bold font-mono text-[#f5f0ea]/60">{profiles.length}</span>
+            </div>
           </div>
         </div>
 
@@ -271,6 +303,18 @@ function InfoRow({ label, value }: { label: string; value: string }) {
     <div className="flex flex-col gap-0.5">
       <span className="text-xs text-[#f5f0ea]/35 uppercase tracking-wider">{label}</span>
       <span className="text-sm font-mono text-[#f5f0ea]/70 truncate">{value}</span>
+    </div>
+  );
+}
+
+function StatTile({ icon: Icon, label, value, color }: { icon: React.ElementType; label: string; value: string; color: string }) {
+  return (
+    <div className="rounded-xl bg-[#0c0a09] border border-white/[0.04] px-3 py-2.5 flex flex-col gap-1">
+      <div className="flex items-center gap-1">
+        <Icon className="h-3 w-3" style={{ color }} />
+        <span className="text-[10px] text-[#f5f0ea]/30 uppercase tracking-wider">{label}</span>
+      </div>
+      <span className="text-base font-bold font-mono text-[#f5f0ea]">{value}</span>
     </div>
   );
 }
