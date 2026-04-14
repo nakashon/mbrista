@@ -25,6 +25,8 @@ export default function DashboardPage() {
   const [error, setError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<ActionType | null>(null);
   const [liveStatus, setLiveStatus] = useState<LiveStatus | null>(null);
+  const [socketState, setSocketState] = useState<"connecting" | "connected" | "error">("connecting");
+  const [socketError, setSocketError] = useState<string | null>(null);
 
   const ip = getSavedIp();
 
@@ -56,7 +58,14 @@ export default function DashboardPage() {
   // Live socket stats
   useEffect(() => {
     if (!ip) return;
-    connectSocket({ status: (s) => setLiveStatus(s) }).catch(() => {});
+    setSocketState("connecting");
+    setSocketError(null);
+    connectSocket({
+      connect:    () => setSocketState("connected"),
+      disconnect: () => setSocketState("connecting"),
+      error:      (e) => { setSocketState("error"); setSocketError(e.message); },
+      status:     (s) => { setLiveStatus(s); setSocketState("connected"); },
+    }).catch((e) => { setSocketState("error"); setSocketError(String(e)); });
     return () => { disconnectSocket(); };
   }, [ip]);
 
@@ -194,6 +203,28 @@ export default function DashboardPage() {
 
           {/* Live stats */}
           <div className="rounded-2xl border border-white/[0.06] bg-[#161210] p-5 flex flex-col gap-3">
+            {/* Header with connection status */}
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-[#f5f0ea]/35 uppercase tracking-wider">Live</p>
+              <span className={`inline-flex items-center gap-1 text-[10px] font-mono rounded px-1.5 py-0.5 ${
+                socketState === "connected" ? "text-[#4ade80]/70 bg-[#4ade80]/10" :
+                socketState === "error"     ? "text-red-400/70 bg-red-400/10" :
+                "text-[#f5f0ea]/25 bg-white/[0.04]"
+              }`}>
+                <span className={`h-1 w-1 rounded-full ${
+                  socketState === "connected" ? "bg-[#4ade80] animate-pulse" :
+                  socketState === "error"     ? "bg-red-400" :
+                  "bg-current opacity-50 animate-pulse"
+                }`} />
+                {socketState === "connected" ? "live" : socketState === "error" ? "err" : "…"}
+              </span>
+            </div>
+
+            {/* Error hint */}
+            {socketState === "error" && socketError && (
+              <p className="text-[10px] text-red-400/60 font-mono break-all">{socketError.slice(0, 80)}</p>
+            )}
+
             {/* Machine state badge */}
             <div className="flex items-center gap-2">
               <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${
@@ -208,7 +239,7 @@ export default function DashboardPage() {
                   liveStatus?.name === "preheating" ? "bg-[#e8944a] animate-pulse" :
                   "bg-current opacity-60"
                 }`} />
-                {liveStatus?.name ?? "connecting…"}
+                {liveStatus?.name ?? (socketState === "error" ? "offline" : "connecting…")}
               </span>
               {liveStatus?.loaded_profile && (
                 <span className="text-xs text-[#f5f0ea]/30 truncate">{liveStatus.loaded_profile}</span>
