@@ -4,6 +4,7 @@ import { MessageSquarePlus, X, Send, Loader2, CheckCircle } from "lucide-react";
 import { getSavedIp } from "@/lib/connection-store";
 import { getMachineInfo } from "@/lib/machine-api";
 import { usePathname } from "next/navigation";
+import { VERSION_STRING } from "@/lib/version";
 
 const GH_TOKEN = process.env.NEXT_PUBLIC_FEEDBACK_TOKEN ?? "";
 const GH_REPO  = "nakashon/metbarista";
@@ -39,6 +40,7 @@ export function FeedbackButton() {
     setStatus("sending");
     const body = [
       `**Submitted via:** MetBarista in-app feedback`,
+      `**Version:** \`${VERSION_STRING}\``,
       `**Page:** \`${pathname}\``,
       `**Machine Serial:** \`${serial || "unknown"}\``,
       `**User Name:** ${name.trim() || "_anonymous_"}`,

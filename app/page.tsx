@@ -7,6 +7,7 @@ import { Coffee, Gauge, History, ArrowRight, Layers, GitCompare, Radio, Share2, 
 import { ConnectDialog } from "@/components/connect-dialog";
 import { getSavedIp } from "@/lib/connection-store";
 import { testConnection } from "@/lib/machine-api";
+import { VERSION_STRING } from "@/lib/version";
 
 const FEATURES = [
   { icon: Gauge,      title: "Control Plane",    desc: "Preheat, tare, purge, start/stop — full machine control from your browser.",               color: "#e8944a" },
@@ -196,10 +197,13 @@ export default function HomePage() {
             </a>{" "}
             · MIT License · Free forever
           </p>
-          <a href="https://github.com/nakashon/metbarista" target="_blank" rel="noopener noreferrer"
-             className="flex items-center gap-1.5 text-xs text-[#f5f0ea]/25 hover:text-[#f5f0ea]/50 transition-colors font-mono">
-            <Star className="h-3 w-3" /> Star on GitHub
-          </a>
+          <div className="flex items-center gap-3">
+            <span className="font-mono text-[10px] text-[#f5f0ea]/15">{VERSION_STRING}</span>
+            <a href="https://github.com/nakashon/metbarista" target="_blank" rel="noopener noreferrer"
+               className="flex items-center gap-1.5 text-xs text-[#f5f0ea]/25 hover:text-[#f5f0ea]/50 transition-colors font-mono">
+              <Star className="h-3 w-3" /> Star on GitHub
+            </a>
+          </div>
         </div>
       </footer>
 

@@ -65,7 +65,7 @@ export default function RootLayout({
         </main>
         {/* Footer — desktop only */}
         <footer className="hidden md:block border-t border-white/[0.05] py-5 text-center text-xs text-[#f5f0ea]/25">
-          metbarista — open source, always free ·{" "}
+          MetBarista — open source, always free ·{" "}
           <a
             href="https://discord.gg/w48ha2h3"
             target="_blank"
@@ -73,6 +73,15 @@ export default function RootLayout({
             className="underline underline-offset-2 hover:text-[#f5f0ea]/50 transition-colors"
           >
             Meticulous Discord
+          </a>
+          {" "}·{" "}
+          <a
+            href="https://github.com/nakashon/metbarista"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-mono hover:text-[#f5f0ea]/50 transition-colors"
+          >
+            {process.env.NEXT_PUBLIC_APP_VERSION ? `v${process.env.NEXT_PUBLIC_APP_VERSION}` : ""}
           </a>
         </footer>
         {/* Bottom nav — mobile/tablet only */}
