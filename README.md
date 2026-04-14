@@ -1,4 +1,4 @@
-# metbarista ☕
+# MetBarista ☕
 
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Live](https://img.shields.io/badge/live-metbarista.com-orange)](https://metbarista.com)
@@ -12,16 +12,16 @@ Live at → **[metbarista.com](https://metbarista.com)**
 
 ## What is this?
 
-metbarista is a free, open-source PWA that connects directly to your [Meticulous](https://meticuloushome.com) espresso machine over your local WiFi. No cloud, no account, no subscription — your machine IP is the only thing you need.
+MetBarista is a free, open-source PWA that connects directly to your [Meticulous](https://meticuloushome.com) espresso machine over your local WiFi. No cloud, no account, no subscription — your machine IP is the only thing you need.
 
 ### Features
 
 | Feature | Description |
 |---|---|
-| 🎛 **Dashboard** | Live machine status, all controls (start, stop, preheat, tare, purge, raise) |
-| 📋 **Profiles** | Browse all profiles on your machine with cover images + pressure curve fingerprints |
+| 🎛 **Dashboard** | Live machine status, sensor tiles (temp/weight/pressure), controls (start, stop, preheat, tare, purge) |
+| 📋 **Profiles** | Browse all profiles on your machine with cover images + generative pressure-curve fingerprints |
 | 📈 **Shot History** | Every shot with full telemetry charts (pressure, flow, weight, temperature) |
-| 📡 **Live Telemetry** | Real-time shot data as it's being pulled |
+| 📡 **Live Monitor** | Real-time shot data — state, temp, weight, pressure, timer + live chart as the shot builds |
 | 🔬 **Compare** | Side-by-side shot comparison |
 | ✏️ **Create** | Build new pressure/flow profiles from scratch |
 | 🌐 **Community** | Firmware changelog, company updates, resources |
@@ -31,7 +31,31 @@ metbarista is a free, open-source PWA that connects directly to your [Meticulous
 
 > **Machine = Identity.** Connecting your Meticulous IS your login. No OAuth, no passwords, no accounts. If you own a machine, you're part of the community.
 
-Everything runs in your browser. metbarista talks directly to `http://{your-machine-ip}/api/v1/` — the same API the official app uses.
+Everything runs in your browser. MetBarista talks directly to `http://{your-machine-ip}/api/v1/` — the same API the official app uses.
+
+---
+
+## HTTP vs HTTPS & Live Data
+
+MetBarista is served over both HTTP and HTTPS at `metbarista.com`.
+
+**Live telemetry** (socket polling to your local machine IP) requires the browser to make requests to `http://192.168.x.x` — a private network address. Modern browsers enforce the [Private Network Access](https://developer.chrome.com/blog/private-network-access-update/) spec which restricts this in certain HTTPS contexts.
+
+### In practice
+
+| Context | REST API (controls, profiles) | Live Telemetry (socket polling) |
+|---|---|---|
+| `http://metbarista.com` | ✅ Works | ✅ Works |
+| `https://metbarista.com` | ✅ Works (machine returns correct CORS headers) | ✅ Works (machine returns `Access-Control-Allow-Origin: https://metbarista.com`) |
+| Mobile browser | ✅ Works | ✅ Works |
+
+### If live data stops working
+
+The machine uses socket.io EIO4 HTTP long-polling (not WebSocket). MetBarista implements this manually via `fetch()` to avoid library quirks. The session stays alive by responding to the machine's ping packets (`"2"`) with pong (`"3"`) every 10 seconds.
+
+If your browser blocks socket polling (you'll see `err` in the Live badge):
+1. **Chrome desktop:** Go to `chrome://net-internals/#hsts` → search `metbarista.com` → Delete (clears the HSTS cache that forces HTTPS)
+2. **Try `http://metbarista.com`** directly — HTTP works for all features
 
 ---
 
@@ -77,8 +101,9 @@ Browser (PWA)
     ├── metbarista.com (GitHub Pages, static export)
     │       └── Next.js 15 · Tailwind v4 · Recharts
     │
-    ├── http://192.168.x.x/api/v1/  ← your Meticulous, local network only
-    │       └── CORS open, direct browser ↔ machine
+    ├── http(s)://192.168.x.x/api/v1/  ← your Meticulous, local network only
+    │       ├── REST API  — machine info, profiles, shot history, actions
+    │       └── Socket.io EIO4 polling — live sensor data (temp, pressure, flow, weight, time)
     │
     └── metbarista-feed-proxy.metbarista.workers.dev  ← Cloudflare Worker
             └── Proxies meticuloushome.com Atom feeds (firmware changelog etc.)
@@ -90,18 +115,29 @@ Browser (PWA)
 
 ## Machine API
 
-The Meticulous machine exposes a local HTTP API:
+The Meticulous machine exposes a local HTTP API (same as the official app):
 
 ```
-GET  /api/v1/machine           → machine info (name, serial, firmware)
-GET  /api/v1/profile/list?full=true  → all profiles with stages
-GET  /api/v1/history           → shot history
-GET  /api/v1/history/{id}      → single shot telemetry
-POST /api/v1/action            → { "name": "start"|"stop"|"preheat"|"tare"|"purge"|"raise" }
-WS   /ws/shot                  → live telemetry stream
+GET  /api/v1/machine                  → machine info (name, serial, firmware)
+GET  /api/v1/profile/list?full=true   → all profiles with full stage data
+GET  /api/v1/history                  → shot history list
+GET  /api/v1/history/{id}             → single shot telemetry
+POST /api/v1/action/{name}            → action: start | stop | preheat | tare | purge | home | abort
 ```
 
-`serial` from `/api/v1/machine` is used as the anonymous machine identity for feedback submissions.
+### Live telemetry (socket.io EIO4 polling)
+
+```
+GET  /socket.io/?EIO=4&transport=polling          → open session, returns {sid, pingInterval, pingTimeout}
+POST /socket.io/?EIO=4&transport=polling&sid=...  → body "40" to join namespace
+GET  /socket.io/?EIO=4&transport=polling&sid=...  → poll for events
+```
+
+Events received:
+- `status` → `{name, state, extracting, loaded_profile, time, profile_time, sensors: {p, f, w, t, g}}`
+- `sensors` → raw sensor dump (temperatures, motor position, etc.)
+
+**Important:** The machine sends a ping packet `"2"` every 10 seconds. You must reply with `"3"` (pong) or the session closes. MetBarista handles this automatically in `lib/machine-socket.ts`.
 
 ---
 
