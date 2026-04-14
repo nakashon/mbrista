@@ -34,7 +34,8 @@ function ProfileDetailContent() {
           setRelatedShots(shots.filter((s) => s.profile?.id === id || s.name === p.name).slice(0, 3));
         }
       })
-      .finally(() => setLoading(false));
+      .catch(() => {})
+    .finally(() => setLoading(false));
   }, [id]);
 
   async function handleLoad() {
@@ -104,7 +105,7 @@ function ProfileDetailContent() {
                 <Weight className="h-3 w-3" />{profile.final_weight}g target
               </span>
               <span className="flex items-center gap-1.5 rounded-full border border-white/[0.08] bg-white/[0.03] px-3 py-1 text-xs text-[#f5f0ea]/60">
-                {profile.stages.length} stages
+                {(profile.stages ?? []).length} stages
               </span>
             </div>
 
@@ -135,7 +136,7 @@ function ProfileDetailContent() {
         <div className="rounded-2xl border border-white/[0.06] bg-[#161210] p-6">
           <h2 className="text-xs font-semibold text-[#f5f0ea]/40 uppercase tracking-wider mb-5">Profile Stages</h2>
           <div className="space-y-0">
-            {profile.stages.map((stage, i) => {
+            {(profile.stages ?? []).map((stage, i) => {
               const c = STAGE_COLORS[stage.type] ?? { bg: "rgba(232,148,74,0.1)", text: "#e8944a" };
               return (
                 <div key={stage.key} className="flex gap-4">
@@ -182,11 +183,11 @@ function ProfileDetailContent() {
         </div>
 
         {/* Variables */}
-        {profile.variables.length > 0 && (
+        {(profile.variables ?? []).length > 0 && (
           <div className="rounded-2xl border border-white/[0.06] bg-[#161210] p-6">
             <h2 className="text-xs font-semibold text-[#f5f0ea]/40 uppercase tracking-wider mb-4">Variables</h2>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-              {profile.variables.map((v) => (
+              {(profile.variables ?? []).map((v) => (
                 <div key={v.key} className="rounded-xl bg-[#0c0a09] px-3 py-2.5">
                   <p className="text-[#f5f0ea]/35 text-xs">{v.name}</p>
                   <p className="font-medium font-mono text-sm text-[#f5f0ea] mt-0.5">
@@ -200,13 +201,13 @@ function ProfileDetailContent() {
         )}
 
         {/* Author lineage */}
-        {profile.previous_authors.length > 0 && (
+        {(profile.previous_authors ?? []).length > 0 && (
           <div className="rounded-2xl border border-white/[0.06] bg-[#161210] p-6">
             <h2 className="text-xs font-semibold text-[#f5f0ea]/40 uppercase tracking-wider mb-4 flex items-center gap-2">
               <GitFork className="h-3.5 w-3.5" /> Lineage
             </h2>
             <div className="flex items-center gap-2 flex-wrap text-sm">
-              {profile.previous_authors.map((a, i) => (
+              {(profile.previous_authors ?? []).map((a, i) => (
                 <span key={a.author_id} className="flex items-center gap-2">
                   {i > 0 && <span className="text-[#f5f0ea]/25">→</span>}
                   <span className="rounded-full bg-white/[0.06] px-2.5 py-0.5 text-[#f5f0ea]/50">{a.name}</span>

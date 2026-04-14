@@ -57,7 +57,7 @@ export async function getSettings(): Promise<MachineSettings> {
 // ── Profiles ─────────────────────────────────────────────────
 
 export async function listProfiles(): Promise<Profile[]> {
-  return apiFetch<Profile[]>("/profile/list");
+  return apiFetch<Profile[]>("/profile/list?full=true");
 }
 
 export async function loadProfileById(id: string): Promise<void> {
