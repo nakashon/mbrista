@@ -156,4 +156,4 @@ The easiest way to contribute:
 
 MIT — see [LICENSE](LICENSE). Free forever, for the community.
 
-Built with ☕ by [@nakashon](https://github.com/nakashon) and the Meticulous community.
+Built with ☕ by [Asaf Nakash](https://nakashon.com) ([@nakashon](https://github.com/nakashon)) and the Meticulous community.

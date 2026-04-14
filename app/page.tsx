@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Coffee, Gauge, History, ArrowRight, Layers, GitCompare, Radio, Share2, Loader2 } from "lucide-react";
+import { Coffee, Gauge, History, ArrowRight, Layers, GitCompare, Radio, Share2, Loader2, Star, GitFork } from "lucide-react";
 import { ConnectDialog } from "@/components/connect-dialog";
 import { getSavedIp } from "@/lib/connection-store";
 import { testConnection } from "@/lib/machine-api";
@@ -118,6 +118,44 @@ export default function HomePage() {
         </div>
       </section>
 
+      {/* Open Source CTA */}
+      <section className="border-t border-white/[0.05]">
+        <div className="mx-auto max-w-4xl px-6 py-16 text-center">
+          <div className="inline-flex items-center gap-2 rounded-full border border-[#e8944a]/20 bg-[#e8944a]/[0.06] px-3 py-1 text-xs font-medium text-[#e8944a] mb-6">
+            Open Source
+          </div>
+          <h2 className="text-2xl sm:text-3xl font-bold text-[#f5f0ea] mb-3">
+            Built by the community, for the community
+          </h2>
+          <p className="text-[#f5f0ea]/45 text-sm max-w-xl mx-auto mb-8 leading-relaxed">
+            MetBarista is fully open source — MIT licensed. Read the code, suggest features,
+            fix bugs, or build your own tools on top of the Meticulous API.
+          </p>
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+            <a
+              href="https://github.com/nakashon/metbarista"
+              target="_blank" rel="noopener noreferrer"
+              className="inline-flex items-center gap-2.5 rounded-xl bg-white/[0.06] border border-white/[0.10] px-6 py-3 text-sm font-semibold text-[#f5f0ea] hover:bg-white/[0.10] hover:border-white/[0.18] transition-all"
+            >
+              <Star className="h-4 w-4 text-yellow-400" /> Star on GitHub
+            </a>
+            <a
+              href="https://github.com/nakashon/metbarista/fork"
+              target="_blank" rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 rounded-xl border border-white/[0.08] px-6 py-3 text-sm font-medium text-[#f5f0ea]/55 hover:bg-white/[0.05] hover:text-[#f5f0ea] transition-all"
+            >
+              <GitFork className="h-4 w-4" /> Fork & Contribute
+            </a>
+          </div>
+          <p className="text-xs text-[#f5f0ea]/25 mt-6">
+            <a href="https://github.com/nakashon/metbarista" target="_blank" rel="noopener noreferrer"
+               className="hover:text-[#f5f0ea]/50 transition-colors font-mono">
+              github.com/nakashon/metbarista
+            </a>
+          </p>
+        </div>
+      </section>
+
       {/* Ecosystem */}
       <section className="border-t border-white/[0.05]">
         <div className="mx-auto max-w-5xl px-6 py-16">
@@ -140,6 +178,30 @@ export default function HomePage() {
           </div>
         </div>
       </section>
+
+      {/* Footer */}
+      <footer className="border-t border-white/[0.05] bg-[#0a0807]">
+        <div className="mx-auto max-w-5xl px-6 py-8 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-6 w-6 items-center justify-center rounded-md bg-[#F5C444]/15">
+              <Coffee className="h-3 w-3 text-[#F5C444]" />
+            </div>
+            <span className="text-sm font-semibold text-[#f5f0ea]/60">MetBarista</span>
+          </div>
+          <p className="text-xs text-[#f5f0ea]/25 text-center">
+            Built by{" "}
+            <a href="https://nakashon.com" target="_blank" rel="noopener noreferrer"
+               className="text-[#f5f0ea]/45 hover:text-[#e8944a] transition-colors">
+              Asaf Nakash
+            </a>{" "}
+            · MIT License · Free forever
+          </p>
+          <a href="https://github.com/nakashon/metbarista" target="_blank" rel="noopener noreferrer"
+             className="flex items-center gap-1.5 text-xs text-[#f5f0ea]/25 hover:text-[#f5f0ea]/50 transition-colors font-mono">
+            <Star className="h-3 w-3" /> Star on GitHub
+          </a>
+        </div>
+      </footer>
 
       <ConnectDialog
         open={showConnect}

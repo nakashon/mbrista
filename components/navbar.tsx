@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Coffee, Gauge, History, Layers, Users, GitCompare, Radio, Upload } from "lucide-react";
+import { Coffee, Gauge, History, Layers, Users, GitCompare, Radio, Upload, Github } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ConnectionDot } from "./connection-dot";
 
@@ -42,7 +42,14 @@ export function Navbar() {
           ))}
         </nav>
 
-        <ConnectionDot />
+        <div className="flex items-center gap-3">
+          <a href="https://github.com/nakashon/metbarista" target="_blank" rel="noopener noreferrer"
+            title="Star on GitHub"
+            className="flex items-center gap-1.5 text-[#f5f0ea]/30 hover:text-[#f5f0ea]/70 transition-colors">
+            <Github className="h-4 w-4" />
+          </a>
+          <ConnectionDot />
+        </div>
       </div>
     </header>
   );
