@@ -15,7 +15,7 @@ export function MobileHeader() {
         <div className="flex h-6 w-6 items-center justify-center rounded-md bg-[#F5C444]/15 text-[#F5C444]">
           <Coffee className="h-3 w-3" />
         </div>
-        <span className="font-semibold text-sm text-[#f5f0ea] tracking-tight">metbarista</span>
+        <span className="font-semibold text-sm text-[#f5f0ea] tracking-tight">MetBarista</span>
       </Link>
       <ConnectionDot />
     </header>

@@ -34,23 +34,22 @@ export default function LivePage() {
       disconnect: () => { setConnected(false); setPhase("idle"); },
       status: (s) => {
         setStatus(s);
-        setPhase(s.state ?? "idle");
+        setPhase(s.name ?? s.state ?? "idle");
 
-        // Only record data during active shot
-        const isActive = s.state && !["idle", "retracting", "heating"].includes(s.state.toLowerCase());
-        if (isActive && s.shot) {
+        // Record data whenever extracting (use sensors — machine doesn't put data in s.shot)
+        if (s.extracting) {
           if (!startRef.current) startRef.current = Date.now();
           const t = Date.now() - startRef.current;
           setData((prev) => [
             ...prev.slice(-300),
             {
               t,
-              pressure: s.shot?.pressure ?? null,
-              flow: s.shot?.flow ?? null,
-              weight: s.shot?.weight != null && s.shot.weight > 0 ? s.shot.weight : null,
+              pressure: s.sensors?.p ?? null,
+              flow: s.sensors?.f ?? null,
+              weight: s.sensors?.w != null && s.sensors.w > 0 ? s.sensors.w : null,
             },
           ]);
-        } else if (s.state?.toLowerCase() === "idle") {
+        } else if (s.name === "idle") {
           startRef.current = null;
         }
       },

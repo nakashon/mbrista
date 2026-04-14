@@ -239,7 +239,7 @@ function ShareContent() {
 
             {/* Footer */}
             <div className="flex items-center justify-between pt-2 border-t border-white/[0.06]">
-              <span className="text-xs text-[#f5f0ea]/25">Shared via metbarista</span>
+              <span className="text-xs text-[#f5f0ea]/25">Shared via MetBarista</span>
               <span className="text-xs text-[#f5f0ea]/20 font-mono">{profile.id.slice(0, 8)}</span>
             </div>
           </div>

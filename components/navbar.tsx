@@ -25,7 +25,7 @@ export function Navbar() {
           <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#F5C444]/15 text-[#F5C444] group-hover:bg-[#F5C444]/25 transition-colors">
             <Coffee className="h-3.5 w-3.5" />
           </div>
-          <span className="font-semibold text-[#f5f0ea] tracking-tight">metbarista</span>
+          <span className="font-semibold text-[#f5f0ea] tracking-tight">MetBarista</span>
         </Link>
 
         <nav className="flex items-center gap-0.5">

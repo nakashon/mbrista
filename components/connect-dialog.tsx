@@ -79,7 +79,7 @@ export function ConnectDialog({ open, onConnected, onCancel }: ConnectDialogProp
             <div className="text-xs text-[#f5f0ea]/60 leading-relaxed space-y-1">
               <p>
                 <span className="text-[#e8944a] font-medium">Same WiFi required.</span>{" "}
-                metbarista connects directly to your machine — no cloud involved.
+                MetBarista connects directly to your machine — no cloud involved.
               </p>
               {typeof window !== "undefined" && window.location.protocol === "https:" && (
                 <p className="text-[#f5f0ea]/45">

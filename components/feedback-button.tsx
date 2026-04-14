@@ -38,7 +38,7 @@ export function FeedbackButton() {
     if (!text.trim()) return;
     setStatus("sending");
     const body = [
-      `**Submitted via:** metbarista in-app feedback`,
+      `**Submitted via:** MetBarista in-app feedback`,
       `**Page:** \`${pathname}\``,
       `**Machine Serial:** \`${serial || "unknown"}\``,
       `**User Name:** ${name.trim() || "_anonymous_"}`,

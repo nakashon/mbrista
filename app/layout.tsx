@@ -18,7 +18,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "metbarista — Precision Espresso Control",
+  title: "MetBarista — Precision Espresso Control",
   description:
     "The open community control plane for Meticulous espresso machines. Browse profiles, monitor shots, share data.",
   manifest: "/manifest.json",
@@ -29,7 +29,7 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "metbarista",
+    title: "MetBarista",
   },
   icons: {
     apple: "/apple-touch-icon.png",
