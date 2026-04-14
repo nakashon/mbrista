@@ -22,6 +22,10 @@ export const metadata: Metadata = {
   description:
     "The open community control plane for Meticulous espresso machines. Browse profiles, monitor shots, share data.",
   manifest: "/manifest.json",
+  metadataBase: new URL("https://metbarista.com"),
+  alternates: {
+    canonical: "/",
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
