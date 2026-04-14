@@ -237,6 +237,7 @@ export interface MachineConnection {
 export interface LiveStatus {
   name: string;         // machine state name e.g. "idle", "preheating", "extracting"
   state: string;
+  time?: number;        // elapsed shot time in seconds
   profile_time: number;
   loaded_profile?: string;
   extracting?: boolean;
