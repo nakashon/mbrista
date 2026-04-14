@@ -22,6 +22,7 @@ export default function HomePage() {
   const router = useRouter();
   const [showConnect, setShowConnect] = useState(false);
   const [checking, setChecking] = useState(true);
+  const [stars, setStars] = useState<number | null>(null);
 
   useEffect(() => {
     const ip = getSavedIp();
@@ -30,6 +31,13 @@ export default function HomePage() {
       .then(() => router.replace("/dashboard"))
       .catch(() => setChecking(false));
   }, [router]);
+
+  useEffect(() => {
+    fetch("https://api.github.com/repos/nakashon/metbarista")
+      .then(r => r.json())
+      .then(d => setStars(d.stargazers_count))
+      .catch(() => {});
+  }, []);
 
   if (checking) {
     return (
@@ -138,7 +146,11 @@ export default function HomePage() {
               target="_blank" rel="noopener noreferrer"
               className="inline-flex items-center gap-2.5 rounded-xl bg-white/[0.06] border border-white/[0.10] px-6 py-3 text-sm font-semibold text-[#f5f0ea] hover:bg-white/[0.10] hover:border-white/[0.18] transition-all"
             >
-              <Star className="h-4 w-4 text-yellow-400" /> Star on GitHub
+              <Star className="h-4 w-4 text-yellow-400" />
+              Star on GitHub
+              {stars !== null && (
+                <span className="ml-1 font-mono text-xs text-[#f5f0ea]/40 bg-white/[0.06] rounded px-1.5 py-0.5">{stars}</span>
+              )}
             </a>
             <a
               href="https://github.com/nakashon/metbarista/fork"

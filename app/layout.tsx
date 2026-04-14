@@ -65,16 +65,12 @@ export default function RootLayout({
         </main>
         {/* Footer — desktop only */}
         <footer className="hidden md:block border-t border-white/[0.05] py-5 text-center text-xs text-[#f5f0ea]/25">
-          MetBarista — open source, always free ·{" "}
-          <a
-            href="https://discord.gg/w48ha2h3"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="underline underline-offset-2 hover:text-[#f5f0ea]/50 transition-colors"
-          >
-            Meticulous Discord
+          Built by{" "}
+          <a href="https://nakashon.com" target="_blank" rel="noopener noreferrer"
+            className="text-[#f5f0ea]/45 hover:text-[#e8944a] transition-colors">
+            Asaf Nakash
           </a>
-          {" "}·{" "}
+          {" "}· MetBarista · MIT ·{" "}
           <a
             href="https://github.com/nakashon/metbarista"
             target="_blank"
