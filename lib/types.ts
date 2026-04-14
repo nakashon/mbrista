@@ -210,6 +210,7 @@ export type ActionType =
   | "preheat"
   | "tare"
   | "purge"
+  | "raise"
   | "calibrate"
   | "abort";
 

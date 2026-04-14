@@ -15,13 +15,13 @@ interface ConnectDialogProps {
 const HOW_TO_FIND = [
   {
     icon: Smartphone,
-    title: "Meticulous app → Settings → Machine Info",
-    desc: 'Open the Meticulous app on your phone. Tap Settings (bottom right) → Machine Info. The IP address is listed there.',
+    title: "Meticulous app → gear icon → Machine Info",
+    desc: 'Open the Meticulous app. Tap the ⚙️ gear icon (top-right corner). Tap "Machine Info". Under "WiFi Information", look for the "IPs:" field — use the 192.168.x.x address.',
   },
   {
     icon: Monitor,
     title: "Check the machine screen",
-    desc: 'On the machine itself, navigate to Settings → WiFi. The IP address is shown there (e.g. 192.168.1.42).',
+    desc: 'On the machine itself, navigate to Settings → WiFi. The IP address is shown there (e.g. 192.168.86.28).',
   },
   {
     icon: Router,

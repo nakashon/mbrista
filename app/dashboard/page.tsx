@@ -6,7 +6,7 @@ import { format } from "date-fns";
 import { ConnectDialog } from "@/components/connect-dialog";
 import {
   Coffee, Wifi, WifiOff, Loader2,
-  Play, Square, Flame, Scale, Wind, RefreshCw
+  Play, Square, Flame, Scale, Wind, RefreshCw, ArrowUp
 } from "lucide-react";
 import { getMachineInfo, getHistory, executeAction, listProfiles } from "@/lib/machine-api";
 import { getSavedIp } from "@/lib/connection-store";
@@ -120,11 +120,12 @@ export default function DashboardPage() {
   }
 
   const ACTIONS: { action: ActionType; label: string; icon: React.ElementType; style: "primary" | "danger" | "outline" }[] = [
-    { action: "preheat", label: "Preheat", icon: Flame, style: "outline" },
-    { action: "tare", label: "Tare Scale", icon: Scale, style: "outline" },
-    { action: "purge", label: "Purge", icon: Wind, style: "outline" },
-    { action: "start", label: "Start Shot", icon: Play, style: "primary" },
-    { action: "stop", label: "Stop", icon: Square, style: "danger" },
+    { action: "preheat", label: "Preheat",    icon: Flame,   style: "outline" },
+    { action: "tare",    label: "Tare Scale", icon: Scale,   style: "outline" },
+    { action: "purge",   label: "Purge",      icon: Wind,    style: "outline" },
+    { action: "raise",   label: "Raise",      icon: ArrowUp, style: "outline" },
+    { action: "start",   label: "Start Shot", icon: Play,    style: "primary" },
+    { action: "stop",    label: "Stop",       icon: Square,  style: "danger"  },
   ];
 
   return (
@@ -189,8 +190,8 @@ export default function DashboardPage() {
         {/* Machine control */}
         <div className="rounded-2xl border border-white/[0.06] bg-[#161210] p-5">
           <p className="text-xs text-[#f5f0ea]/35 uppercase tracking-wider mb-4">Machine Control</p>
-          {/* Secondary actions: small grid */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-2">
+          {/* Secondary actions: 3-col grid on mobile, all in a row on desktop */}
+          <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 mb-2">
             {ACTIONS.filter(a => a.style !== "primary").map(({ action, label, icon: Icon, style }) => {
               const base = "flex flex-col items-center justify-center gap-2 rounded-xl py-4 text-xs font-semibold transition-all disabled:opacity-40 active:scale-95";
               const cls =
