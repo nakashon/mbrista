@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Gauge, History, Layers, Radio, Users } from "lucide-react";
+import { Gauge, History, Layers, Radio, Target } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // 5 tabs for mobile — most-used actions next to the machine
@@ -10,7 +10,7 @@ const TABS = [
   { href: "/profiles",  label: "Profiles",  icon: Layers },
   { href: "/live",      label: "Focus",      icon: Radio },
   { href: "/history",   label: "Shots",      icon: History },
-  { href: "/community", label: "Community",  icon: Users },
+  { href: "/barista",   label: "My Stats",   icon: Target },
 ];
 
 export function BottomNav() {

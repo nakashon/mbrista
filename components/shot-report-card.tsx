@@ -20,6 +20,7 @@ import type { ShotEntry } from "@/lib/types";
 import type { ShotAnalysis, ShotMetric, Suggestion, MetricStatus } from "@/lib/shot-analysis";
 import { analyzeShot } from "@/lib/shot-analysis";
 import { recordTrend, getRecentTrend, trendDirection } from "@/lib/shot-trend";
+import { recordShot, isDialedIn } from "@/lib/barista-stats";
 import type { TrendEntry } from "@/lib/shot-trend";
 
 // ── Score ring ───────────────────────────────────────────────
@@ -213,8 +214,12 @@ export function ShotReportCard({ shot, defaultExpanded = true }: ShotReportCardP
   useMemo(() => {
     if (shot.profile && analysis.applicableCount > 0) {
       recordTrend(shot.profile, shot.time, analysis);
+      // Record for gamification stats
+      recordShot(shot.time, shot.profile.id, shot.profile.name, analysis);
     }
   }, [shot, analysis]);
+
+  const dialedIn = isDialedIn(analysis.overallScore, analysis.applicableCount);
 
   // Get trend data
   const trendEntries = useMemo(() => {
@@ -239,7 +244,14 @@ export function ShotReportCard({ shot, defaultExpanded = true }: ShotReportCardP
       <div className="flex items-start gap-5">
         <ScoreRing score={analysis.overallScore} />
         <div className="flex-1 pt-1">
-          <h3 className="text-sm font-semibold text-[#f5f0ea]">Shot Analysis</h3>
+          <h3 className="text-sm font-semibold text-[#f5f0ea]">
+            Shot Analysis
+            {dialedIn && (
+              <span className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-[#22c55e]/10 border border-[#22c55e]/20 text-[#22c55e] text-xs font-bold">
+                🎯 Dialed In!
+              </span>
+            )}
+          </h3>
           <p className="text-xs text-[#f5f0ea]/30 mt-0.5">
             {analysis.applicableCount} of {analysis.totalCount} metrics analyzed
           </p>
