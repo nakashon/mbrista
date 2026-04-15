@@ -9,12 +9,12 @@ import { getSavedIp, saveIp, getIpFromUrlParam } from "@/lib/connection-store";
 import { testConnection } from "@/lib/machine-api";
 
 const FEATURES = [
-  { icon: Gauge,      title: "Control Plane",    desc: "Preheat, tare, purge, start/stop — full machine control from your browser.",               color: "#e8944a" },
-  { icon: History,    title: "Shot Analytics",   desc: "Full history with pressure, flow, weight and temperature curves per extraction.",           color: "#60a5fa" },
-  { icon: Layers,     title: "Profile Library",  desc: "Browse your machine's profiles with OEPF stage diagrams and settings.",                    color: "#a78bfa" },
-  { icon: Radio,      title: "Live Monitor",     desc: "Watch your extraction in real-time via Socket.IO telemetry streaming.",                    color: "#f87171" },
-  { icon: GitCompare, title: "Shot Comparison",  desc: "Overlay up to 5 shots to analyse consistency and dial-in improvements.",                  color: "#34d399" },
-  { icon: Share2,     title: "Geeky Share Cards",desc: "Share profiles with actual shot telemetry, curves, and full OEPF data.",                   color: "#f5a855" },
+  { icon: GitCompare, title: "Shot Comparison",   desc: "Overlay multiple shots on one chart. See exactly why shot 47 tasted better than shot 46.", color: "#34d399" },
+  { icon: History,    title: "Deep Analytics",    desc: "~300 data points per shot — pressure, flow, weight, temperature, motor load. Every sensor, every frame.", color: "#60a5fa" },
+  { icon: Layers,     title: "Profile Inspector", desc: "See the full OEPF stage diagram, dynamics, variables, and lineage of every profile on your machine.", color: "#a78bfa" },
+  { icon: Radio,      title: "Live Telemetry",    desc: "Real-time extraction chart with phase timeline. Watch pressure build, bloom, and flow — as it happens.", color: "#f87171" },
+  { icon: Share2,     title: "Geeky Share Cards", desc: "Share a profile with actual shot data attached — pressure curves, extraction stats, full OEPF spec.", color: "#f5a855" },
+  { icon: Gauge,      title: "Full Control",      desc: "Preheat, tare, purge, start/stop — everything the official app does, right in your browser.", color: "#e8944a" },
 ];
 
 export default function HomePage() {
@@ -73,15 +73,19 @@ export default function HomePage() {
         <div className="relative mx-auto max-w-4xl px-6 py-28 text-center w-full">
           <div className="inline-flex items-center gap-2 rounded-full border border-[#e8944a]/20 bg-[#e8944a]/[0.08] px-3 py-1 text-xs font-medium text-[#e8944a] mb-8">
             <Coffee className="h-3 w-3" />
-            Community-first · Always free · Open source
+            Built by a daily Meticulous user · Free forever · Open source
           </div>
           <h1 className="text-5xl sm:text-7xl font-extrabold tracking-tight text-[#f5f0ea] mb-6 leading-[1.05]">
-            Your Meticulous machine,<br />
-            <span className="text-[#e8944a]">fully unleashed.</span>
+            The official app gets<br />
+            <span className="text-[#e8944a]">you started.</span>
           </h1>
-          <p className="text-lg text-[#f5f0ea]/50 max-w-2xl mx-auto mb-10 leading-relaxed">
-            Connect directly to your machine. Pull shot history. Browse and share profiles
-            with full geeky telemetry — pressure curves, flow diagrams, and actual extraction data.
+          <p className="text-lg text-[#f5f0ea]/50 max-w-2xl mx-auto mb-4 leading-relaxed">
+            MetBarista is for when you want to go deeper.
+          </p>
+          <p className="text-sm text-[#f5f0ea]/35 max-w-xl mx-auto mb-10 leading-relaxed">
+            I pull shots every morning. After a while I wanted to compare shot 47 to shot 46,
+            understand why one tasted better, build profiles with real data behind them.
+            So I built this — a geeky, open control center for people who take their espresso seriously.
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
             <button
@@ -105,7 +109,7 @@ export default function HomePage() {
         <div className="mx-auto max-w-4xl px-6 py-6 grid grid-cols-3 gap-4 text-center">
           {[
             { value: "~300", label: "Data points per shot" },
-            { value: "OEPF", label: "Open profile format" },
+            { value: "4",    label: "Shots overlaid at once" },
             { value: "0",    label: "Cost to run" },
           ].map(({ value, label }) => (
             <div key={label}>
@@ -118,8 +122,8 @@ export default function HomePage() {
 
       {/* Features grid */}
       <section className="mx-auto max-w-5xl px-6 py-20">
-        <h2 className="text-2xl font-bold text-[#f5f0ea] text-center mb-3">Everything in one place</h2>
-        <p className="text-[#f5f0ea]/40 text-center text-sm mb-12">No backend. No cloud. Connects directly to your machine over your local network.</p>
+        <h2 className="text-2xl font-bold text-[#f5f0ea] text-center mb-3">What the official app doesn&apos;t do</h2>
+        <p className="text-[#f5f0ea]/40 text-center text-sm mb-12">Everything runs in your browser, directly connected to your machine. No install. No backend. No cloud.</p>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {FEATURES.map(({ icon: Icon, title, desc, color }) => (
             <div key={title} className="group rounded-2xl border border-white/[0.06] bg-[#161210] p-5 hover:border-white/[0.12] hover:bg-[#1e1b16] transition-all">
