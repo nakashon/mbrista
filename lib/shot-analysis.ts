@@ -10,7 +10,7 @@ import type { ShotEntry, ShotFrame, Profile, ProfileStage } from "./types";
 // ── Version ──────────────────────────────────────────────────
 // Bump when scoring thresholds or weights change. Stored with
 // every analysis so trends stay comparable across versions.
-export const ANALYSIS_VERSION = 1;
+export const ANALYSIS_VERSION = 2;
 
 // ── Types ────────────────────────────────────────────────────
 
@@ -278,8 +278,26 @@ function scoreWeightAccuracy(
   const target = profile.final_weight;
   const error = Math.abs(finalWeight - target) / target;
 
-  // 0% error = 100, 20% error = 0, linear
-  const score = clamp(100 - error * 500);
+  // If weight is >50% off target, it's likely intentional (different drink style,
+  // flushing, or the barista deliberately overrides the profile target)
+  if (error > 0.5) {
+    return {
+      key,
+      label,
+      score: 0,
+      status: "poor",
+      value: `${finalWeight.toFixed(1)}g / ${target}g target`,
+      detail: `Weight is ${Math.round(error * 100)}% off the profile target (${finalWeight.toFixed(0)}g vs ${target}g) — likely intentional, not scored`,
+      applicable: false,
+    };
+  }
+
+  // Gentler curve: 0% error = 100, 5% = 100 (dead band), 30% = 0
+  // This gives a flat perfect zone near target, then linear degrade
+  const deadBand = 0.05;
+  const maxError = 0.30;
+  const effectiveError = Math.max(0, error - deadBand);
+  const score = clamp(100 - (effectiveError / (maxError - deadBand)) * 100);
 
   return {
     key,
@@ -476,6 +494,12 @@ function scoreChannelingRisk(frames: ShotFrame[]): ShotMetric {
   };
 }
 
+// Espresso brew temperature must be in a reasonable range to be scored.
+// Below MIN_BREW_TEMP the shot is likely a flush/throwaway.
+const MIN_BREW_TEMP_C = 70;
+const IDEAL_BREW_TEMP_LOW = 85;
+const IDEAL_BREW_TEMP_HIGH = 96;
+
 function scoreTempStability(frames: ShotFrame[]): ShotMetric {
   const key = "temp_stability";
   const label = "Temp Stability";
@@ -502,21 +526,50 @@ function scoreTempStability(frames: ShotFrame[]): ShotMetric {
   const sd = stdDev(temps);
   const avgTemp = temps.reduce((a, b) => a + b, 0) / temps.length;
 
-  // 0°C std dev = 100, 3°C = 0
-  const score = clamp(100 - (sd / 3) * 100);
+  // If avg temp is below minimum, this isn't a real espresso shot
+  if (avgTemp < MIN_BREW_TEMP_C) {
+    return {
+      key, label, score: 0, status: "poor",
+      value: `${avgTemp.toFixed(1)}°C — too cold`,
+      detail: `Average brew temperature ${avgTemp.toFixed(0)}°C is below ${MIN_BREW_TEMP_C}°C — likely a flush or throwaway shot`,
+      applicable: false,
+    };
+  }
+
+  // Stability score: 0°C std dev = 100, 3°C = 0
+  let score = clamp(100 - (sd / 3) * 100);
+
+  // Range penalty: if avg temp is outside the ideal espresso window,
+  // reduce score proportionally (up to -30 points)
+  if (avgTemp < IDEAL_BREW_TEMP_LOW) {
+    const degBelow = IDEAL_BREW_TEMP_LOW - avgTemp;
+    score = clamp(score - Math.min(degBelow * 2, 30));
+  } else if (avgTemp > IDEAL_BREW_TEMP_HIGH) {
+    const degAbove = avgTemp - IDEAL_BREW_TEMP_HIGH;
+    score = clamp(score - Math.min(degAbove * 2, 30));
+  }
+
+  const rangeNote =
+    avgTemp < IDEAL_BREW_TEMP_LOW
+      ? ` (below ideal ${IDEAL_BREW_TEMP_LOW}–${IDEAL_BREW_TEMP_HIGH}°C range)`
+      : avgTemp > IDEAL_BREW_TEMP_HIGH
+        ? ` (above ideal ${IDEAL_BREW_TEMP_LOW}–${IDEAL_BREW_TEMP_HIGH}°C range)`
+        : "";
 
   return {
     key,
     label,
     score: Math.round(score),
     status: statusFromScore(score),
-    value: `${avgTemp.toFixed(1)}°C ±${sd.toFixed(1)}°C`,
+    value: `${avgTemp.toFixed(1)}°C ±${sd.toFixed(1)}°C${rangeNote}`,
     detail:
-      sd < 0.5
-        ? "Excellent thermal stability"
-        : sd < 1.5
-          ? "Minor temperature fluctuation — acceptable for most profiles"
-          : "Significant temperature variation — consider a longer preheat",
+      avgTemp < IDEAL_BREW_TEMP_LOW || avgTemp > IDEAL_BREW_TEMP_HIGH
+        ? `Temperature ${avgTemp.toFixed(0)}°C is outside the ideal espresso range`
+        : sd < 0.5
+          ? "Excellent thermal stability"
+          : sd < 1.5
+            ? "Minor temperature fluctuation — acceptable for most profiles"
+            : "Significant temperature variation — consider a longer preheat",
     applicable: true,
   };
 }
