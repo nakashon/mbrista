@@ -1,5 +1,11 @@
 /**
- * Shot Analysis Engine — data-driven scoring for every extraction.
+ * Shot Analysis Engine v4 — barista-focused scoring.
+ *
+ * Philosophy: The barista's job is to dial in the recipe and repeat it.
+ * Score = did you hit your targets + are you consistent?
+ *
+ * All frame data is trimmed at piston retract ("retracting" status) so
+ * weight/flow noise from the retract phase is excluded.
  *
  * Pure functions: ShotEntry in → ShotAnalysis out.
  * No network calls, no side effects — runs entirely in the browser.
@@ -8,9 +14,7 @@
 import type { ShotEntry, ShotFrame, Profile, ProfileStage } from "./types";
 
 // ── Version ──────────────────────────────────────────────────
-// Bump when scoring thresholds or weights change. Stored with
-// every analysis so trends stay comparable across versions.
-export const ANALYSIS_VERSION = 3;
+export const ANALYSIS_VERSION = 4;
 
 // ── Types ────────────────────────────────────────────────────
 
@@ -24,47 +28,32 @@ export interface ShotMetric {
   value: string; // human-readable summary
   detail?: string;
   applicable: boolean; // false if data was insufficient
+  category: "barista" | "machine";
 }
 
 export interface Suggestion {
   priority: "high" | "medium" | "low";
-  metric: string; // which metric triggered this
+  metric: string;
   message: string;
   detail?: string;
 }
 
 export interface ShotAnalysis {
-  overallScore: number; // 0-100 (only from applicable metrics)
+  overallScore: number;
   metrics: ShotMetric[];
   suggestions: Suggestion[];
   applicableCount: number;
   totalCount: number;
   analysisVersion: number;
   computedAt: number;
-  throwaway: boolean; // true if shot looks like a flush/warmup/throwaway
+  throwaway: boolean;
   throwawayReason?: string;
 }
 
-// ── Config (tunable) ─────────────────────────────────────────
+// ── Constants ────────────────────────────────────────────────
 
-interface MetricConfig {
-  key: string;
-  label: string;
-  weight: number; // relative weight for overall score (0 = informational only)
-  category: "barista" | "machine"; // barista metrics drive score; machine metrics are FYI
-}
-
-const METRIC_CONFIGS: MetricConfig[] = [
-  // ── Barista metrics (these drive the overall score) ──
-  { key: "weight_accuracy", label: "Weight Accuracy", weight: 30, category: "barista" },
-  { key: "channeling_risk", label: "Puck Prep", weight: 35, category: "barista" },
-  { key: "flow_smoothness", label: "Flow Smoothness", weight: 35, category: "barista" },
-  // ── Machine metrics (informational — shown but not scored) ──
-  { key: "pressure_tracking", label: "Pressure Tracking", weight: 0, category: "machine" },
-  { key: "flow_tracking", label: "Flow Tracking", weight: 0, category: "machine" },
-  { key: "pressure_overshoot", label: "Pressure Control", weight: 0, category: "machine" },
-  { key: "temp_stability", label: "Temp Stability", weight: 0, category: "machine" },
-];
+const MIN_BREW_TEMP_C = 70;
+const MAX_PLAUSIBLE_WEIGHT_G = 200;
 
 // ── Helpers ──────────────────────────────────────────────────
 
@@ -79,18 +68,6 @@ function clamp(v: number, min = 0, max = 100): number {
   return Math.max(min, Math.min(max, v));
 }
 
-/** Rolling average with window size */
-function rollingAvg(values: number[], windowSize: number): number[] {
-  const result: number[] = [];
-  for (let i = 0; i < values.length; i++) {
-    const start = Math.max(0, i - windowSize + 1);
-    const slice = values.slice(start, i + 1);
-    result.push(slice.reduce((a, b) => a + b, 0) / slice.length);
-  }
-  return result;
-}
-
-/** Standard deviation */
 function stdDev(values: number[]): number {
   if (values.length < 2) return 0;
   const mean = values.reduce((a, b) => a + b, 0) / values.length;
@@ -98,9 +75,25 @@ function stdDev(values: number[]): number {
   return Math.sqrt(variance);
 }
 
+function median(arr: number[]): number {
+  const sorted = [...arr].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+/**
+ * Trim frames at piston retract — everything after "retracting" is noise.
+ * Returns only the real extraction frames.
+ */
+function trimAtRetract(frames: ShotFrame[]): ShotFrame[] {
+  const retractIdx = frames.findIndex(
+    (f) => typeof f.status === "string" && f.status.toLowerCase().includes("retract")
+  );
+  return retractIdx > 0 ? frames.slice(0, retractIdx) : frames;
+}
+
 /**
  * Compute a stable hash of profile stages for trend keying.
- * Simple string hash — not cryptographic, just for comparison.
  */
 export function profileStageHash(profile: Profile): string {
   const sig = profile.stages
@@ -116,526 +109,267 @@ export function profileStageHash(profile: Profile): string {
   return Math.abs(hash).toString(36);
 }
 
-// ── Per-frame target reconstruction ──────────────────────────
-// Prefers embedded setpoints from shot data. Falls back to
-// profile stage targets if setpoints are missing.
+// ── Throwaway Detection ──────────────────────────────────────
 
-interface FrameTarget {
-  pressure?: number;
-  flow?: number;
-  source: "frame_setpoint" | "profile_derived" | "unavailable";
-}
-
-function reconstructTargets(
-  frames: ShotFrame[],
-  profile?: Profile
-): FrameTarget[] {
-  // First pass: use embedded setpoints
-  const targets: FrameTarget[] = frames.map((f) => {
-    const sp = f.shot.setpoints;
-    const hasPressure = sp?.pressure != null && !isNaN(sp.pressure);
-    const hasFlow = sp?.flow != null && !isNaN(sp.flow);
-
-    if (hasPressure || hasFlow) {
-      return {
-        pressure: hasPressure ? sp.pressure : undefined,
-        flow: hasFlow ? sp.flow : undefined,
-        source: "frame_setpoint" as const,
-      };
-    }
-    return { source: "unavailable" as const };
-  });
-
-  // If majority of frames have setpoints, we're done
-  const setpointCount = targets.filter(
-    (t) => t.source === "frame_setpoint"
-  ).length;
-  if (setpointCount > frames.length * 0.5) return targets;
-
-  // Fallback: derive from profile stages (time-based interpolation)
-  if (!profile?.stages?.length) return targets;
-
-  // Build a time→target lookup from profile stages
-  const stageTargets = buildStageTargetCurve(profile.stages);
-  if (!stageTargets.length) return targets;
-
-  return frames.map((f, i) => {
-    // Prefer existing frame setpoint
-    if (targets[i].source === "frame_setpoint") return targets[i];
-
-    const timeSec = f.time / 1000;
-    const target = interpolateTarget(stageTargets, timeSec);
-    if (target) {
-      return { ...target, source: "profile_derived" as const };
-    }
-    return { source: "unavailable" as const };
-  });
-}
-
-interface StageTargetPoint {
-  timeSec: number;
-  pressure?: number;
-  flow?: number;
-}
-
-function buildStageTargetCurve(stages: ProfileStage[]): StageTargetPoint[] {
-  const points: StageTargetPoint[] = [];
-  let cumTime = 0;
-
-  for (const stage of stages) {
-    const dynPoints = stage.dynamics.points;
-    if (stage.dynamics.over !== "time" || !dynPoints.length) {
-      // For weight/piston-based stages, use first point as constant target
-      const val = Number(dynPoints[0]?.[1] ?? 0);
-      const exitTime = stage.exit_triggers.find((t) => t.type === "time");
-      const duration = exitTime ? Number(exitTime.value) : 10; // fallback 10s
-
-      const target: StageTargetPoint = { timeSec: cumTime };
-      if (stage.type === "pressure") target.pressure = val;
-      if (stage.type === "flow") target.flow = val;
-      points.push(target);
-
-      cumTime += duration;
-      const endTarget: StageTargetPoint = { timeSec: cumTime };
-      if (stage.type === "pressure") endTarget.pressure = val;
-      if (stage.type === "flow") endTarget.flow = val;
-      points.push(endTarget);
-      continue;
-    }
-
-    // Time-based dynamics: interpolate points
-    for (const [timeVal, targetVal] of dynPoints) {
-      const t = cumTime + Number(timeVal);
-      const v = Number(targetVal);
-      const pt: StageTargetPoint = { timeSec: t };
-      if (stage.type === "pressure") pt.pressure = v;
-      if (stage.type === "flow") pt.flow = v;
-      points.push(pt);
-    }
-
-    // Advance cumulative time by stage duration
-    const lastPointTime = Number(dynPoints[dynPoints.length - 1][0]);
-    const exitTime = stage.exit_triggers.find((t) => t.type === "time");
-    cumTime += exitTime ? Number(exitTime.value) : lastPointTime;
+function detectThrowaway(frames: ShotFrame[]): { throwaway: boolean; reason?: string } {
+  if (frames.length < 5) {
+    return { throwaway: true, reason: "Too few data frames" };
   }
 
-  return points;
-}
-
-function interpolateTarget(
-  curve: StageTargetPoint[],
-  timeSec: number
-): { pressure?: number; flow?: number } | null {
-  if (!curve.length) return null;
-
-  // Before first point
-  if (timeSec <= curve[0].timeSec) return { pressure: curve[0].pressure, flow: curve[0].flow };
-
-  // After last point — hold last value
-  if (timeSec >= curve[curve.length - 1].timeSec) {
-    const last = curve[curve.length - 1];
-    return { pressure: last.pressure, flow: last.flow };
+  const lastTime = frames[frames.length - 1]?.time ?? 0;
+  if (lastTime < 8000) {
+    return { throwaway: true, reason: "Shot under 8 seconds — likely a flush" };
   }
 
-  // Find surrounding points and interpolate
-  for (let i = 0; i < curve.length - 1; i++) {
-    const a = curve[i];
-    const b = curve[i + 1];
-    if (timeSec >= a.timeSec && timeSec <= b.timeSec) {
-      const ratio =
-        b.timeSec - a.timeSec > 0
-          ? (timeSec - a.timeSec) / (b.timeSec - a.timeSec)
-          : 0;
-      return {
-        pressure:
-          a.pressure != null && b.pressure != null
-            ? a.pressure + (b.pressure - a.pressure) * ratio
-            : (a.pressure ?? b.pressure),
-        flow:
-          a.flow != null && b.flow != null
-            ? a.flow + (b.flow - a.flow) * ratio
-            : (a.flow ?? b.flow),
-      };
+  // Scale error (finger press)
+  const weights = frames.map((f) => f.shot.weight).filter((w) => !isNaN(w));
+  const maxWeight = weights.length > 0 ? Math.max(...weights) : 0;
+  if (maxWeight > MAX_PLAUSIBLE_WEIGHT_G) {
+    return { throwaway: true, reason: `Weight ${maxWeight.toFixed(0)}g — scale error` };
+  }
+
+  // Cold water flush
+  const hotFrames = frames.filter((f) => f.time > 3000);
+  const temps = hotFrames
+    .map((f) => f.sensors.bar_mid_up)
+    .filter((t) => typeof t === "number" && !isNaN(t) && t > 0);
+  if (temps.length > 5) {
+    const avgTemp = temps.reduce((a, b) => a + b, 0) / temps.length;
+    if (avgTemp < MIN_BREW_TEMP_C) {
+      return { throwaway: true, reason: `Brew temp ${avgTemp.toFixed(0)}°C — flush/warmup` };
     }
   }
 
-  return null;
+  return { throwaway: false };
 }
 
-// ── Metric Scorers ───────────────────────────────────────────
+// ── Barista Metrics (scored) ─────────────────────────────────
 
-function scoreWeightAccuracy(
-  frames: ShotFrame[],
-  profile?: Profile
-): ShotMetric {
-  const key = "weight_accuracy";
-  const label = "Weight Accuracy";
+/** Yield Accuracy — did you hit the weight target in the profile? */
+function scoreYield(frames: ShotFrame[], profile?: Profile): ShotMetric {
+  const key = "yield_accuracy";
+  const label = "Yield";
+  const cat: "barista" = "barista";
 
   if (!profile?.final_weight || profile.final_weight <= 0) {
-    return { key, label, score: 0, status: "poor", value: "No target weight", applicable: false };
+    return { key, label, score: 0, status: "poor", value: "No target weight in profile", applicable: false, category: cat };
   }
 
   const weights = frames.map((f) => f.shot.weight).filter((w) => !isNaN(w) && w > 0);
   if (!weights.length) {
-    return { key, label, score: 0, status: "poor", value: "No weight data", applicable: false };
+    return { key, label, score: 0, status: "poor", value: "No weight data", applicable: false, category: cat };
   }
 
   const finalWeight = Math.max(...weights);
   const target = profile.final_weight;
   const error = Math.abs(finalWeight - target) / target;
 
-  // If weight is >50% off target, it's likely intentional (different drink style,
-  // flushing, or the barista deliberately overrides the profile target)
+  // >50% off is intentional (different drink, deliberate override)
   if (error > 0.5) {
     return {
-      key,
-      label,
-      score: 0,
-      status: "poor",
-      value: `${finalWeight.toFixed(1)}g / ${target}g target`,
-      detail: `Weight is ${Math.round(error * 100)}% off the profile target (${finalWeight.toFixed(0)}g vs ${target}g) — likely intentional, not scored`,
-      applicable: false,
+      key, label, score: 0, status: "poor",
+      value: `${finalWeight.toFixed(1)}g / ${target}g`,
+      detail: `${Math.round(error * 100)}% off target — likely intentional`,
+      applicable: false, category: cat,
     };
   }
 
-  // Gentler curve: 0% error = 100, 5% = 100 (dead band), 30% = 0
-  // This gives a flat perfect zone near target, then linear degrade
-  const deadBand = 0.05;
-  const maxError = 0.30;
-  const effectiveError = Math.max(0, error - deadBand);
-  const score = clamp(100 - (effectiveError / (maxError - deadBand)) * 100);
+  // 0-5% = perfect (dead band), 5-30% = linear degrade, >30% = 0
+  const effectiveError = Math.max(0, error - 0.05);
+  const score = clamp(100 - (effectiveError / 0.25) * 100);
 
+  const diff = finalWeight - target;
   return {
-    key,
-    label,
+    key, label,
     score: Math.round(score),
     status: statusFromScore(score),
-    value: `${finalWeight.toFixed(1)}g / ${target}g target`,
-    detail:
-      error < 0.05
-        ? "Right on target"
-        : finalWeight < target
-          ? `${((target - finalWeight)).toFixed(1)}g under — consider a finer grind or longer extraction`
-          : `${((finalWeight - target)).toFixed(1)}g over — consider a coarser grind`,
-    applicable: true,
+    value: `${finalWeight.toFixed(1)}g / ${target}g`,
+    detail: error < 0.05
+      ? "Right on target"
+      : diff < 0
+        ? `${Math.abs(diff).toFixed(1)}g under target`
+        : `${diff.toFixed(1)}g over target`,
+    applicable: true, category: cat,
   };
 }
 
-function scorePressureTracking(
-  frames: ShotFrame[],
-  targets: FrameTarget[]
+/** Ratio — dose:yield ratio (the universal espresso metric). */
+function scoreRatio(frames: ShotFrame[], profile?: Profile): ShotMetric {
+  const key = "ratio";
+  const label = "Ratio";
+  const cat: "barista" = "barista";
+
+  // We need both dose and yield to compute ratio
+  const dose = profile?.variables?.find((v) => v.type === "weight" || v.key === "dose")?.value;
+  const weights = frames.map((f) => f.shot.weight).filter((w) => !isNaN(w) && w > 0);
+  const finalWeight = weights.length > 0 ? Math.max(...weights) : 0;
+
+  if (!dose || dose <= 0 || finalWeight <= 0) {
+    return { key, label, score: 0, status: "poor", value: "No dose/yield data", applicable: false, category: cat };
+  }
+
+  const ratio = finalWeight / dose;
+
+  // Target ratio: if profile has final_weight, derive from it
+  const targetYield = profile?.final_weight ?? 0;
+  const targetRatio = targetYield > 0 ? targetYield / dose : 0;
+
+  if (targetRatio <= 0) {
+    // No target — just show the ratio as info, don't score
+    return {
+      key, label, score: 0, status: "good",
+      value: `1:${ratio.toFixed(1)} (${dose}g → ${finalWeight.toFixed(1)}g)`,
+      detail: "No target ratio in profile — shown for reference",
+      applicable: false, category: cat,
+    };
+  }
+
+  // Score based on how close ratio is to target ratio
+  const ratioError = Math.abs(ratio - targetRatio) / targetRatio;
+  const effectiveError = Math.max(0, ratioError - 0.05); // 5% dead band
+  const score = clamp(100 - (effectiveError / 0.25) * 100);
+
+  return {
+    key, label,
+    score: Math.round(score),
+    status: statusFromScore(score),
+    value: `1:${ratio.toFixed(1)} (target 1:${targetRatio.toFixed(1)})`,
+    detail: ratioError < 0.05
+      ? "Ratio on point"
+      : ratio < targetRatio
+        ? "Under-extracted — try finer grind or longer time"
+        : "Over-extracted — try coarser grind",
+    applicable: true, category: cat,
+  };
+}
+
+/** Repeatability — how consistent are your last shots on this profile?
+ *  Uses trend data from shot-trend.ts if available, otherwise n/a. */
+function scoreRepeatability(
+  currentWeight: number,
+  recentWeights: number[],
+  target: number
 ): ShotMetric {
-  const key = "pressure_tracking";
-  const label = "Pressure Tracking";
+  const key = "repeatability";
+  const label = "Consistency";
+  const cat: "barista" = "barista";
 
-  const deviations: number[] = [];
-  for (let i = 0; i < frames.length; i++) {
-    const target = targets[i]?.pressure;
-    if (target == null || target <= 0) continue;
-    const actual = frames[i].shot.pressure;
-    if (isNaN(actual)) continue;
-    deviations.push(Math.abs(actual - target));
-  }
-
-  if (deviations.length < 10) {
-    return { key, label, score: 0, status: "poor", value: "Insufficient setpoint data", applicable: false };
-  }
-
-  const avgDev = deviations.reduce((a, b) => a + b, 0) / deviations.length;
-  // 0 bar deviation = 100, 1.5 bar = 0
-  const score = clamp(100 - (avgDev / 1.5) * 100);
-
-  return {
-    key,
-    label,
-    score: Math.round(score),
-    status: statusFromScore(score),
-    value: `±${avgDev.toFixed(2)} bar avg deviation`,
-    detail:
-      avgDev < 0.3
-        ? "Machine tracked the profile accurately"
-        : `Average ${avgDev.toFixed(1)} bar off target — check grind size and puck prep`,
-    applicable: true,
-  };
-}
-
-function scoreFlowTracking(
-  frames: ShotFrame[],
-  targets: FrameTarget[]
-): ShotMetric {
-  const key = "flow_tracking";
-  const label = "Flow Tracking";
-
-  const deviations: number[] = [];
-  for (let i = 0; i < frames.length; i++) {
-    const target = targets[i]?.flow;
-    if (target == null || target <= 0) continue;
-    const actual = frames[i].shot.flow;
-    if (isNaN(actual)) continue;
-    deviations.push(Math.abs(actual - target));
-  }
-
-  if (deviations.length < 10) {
-    return { key, label, score: 0, status: "poor", value: "Insufficient setpoint data", applicable: false };
-  }
-
-  const avgDev = deviations.reduce((a, b) => a + b, 0) / deviations.length;
-  // 0 ml/s deviation = 100, 2 ml/s = 0
-  const score = clamp(100 - (avgDev / 2.0) * 100);
-
-  return {
-    key,
-    label,
-    score: Math.round(score),
-    status: statusFromScore(score),
-    value: `±${avgDev.toFixed(2)} ml/s avg deviation`,
-    detail:
-      avgDev < 0.4
-        ? "Flow closely followed the profile"
-        : `Average ${avgDev.toFixed(1)} ml/s off target — grind or distribution may need adjustment`,
-    applicable: true,
-  };
-}
-
-function scorePressureOvershoot(
-  frames: ShotFrame[],
-  targets: FrameTarget[]
-): ShotMetric {
-  const key = "pressure_overshoot";
-  const label = "Pressure Control";
-
-  // Find max target pressure
-  const targetPressures = targets
-    .map((t) => t.pressure)
-    .filter((p): p is number => p != null && p > 0);
-  if (targetPressures.length < 5) {
-    return { key, label, score: 0, status: "poor", value: "No target data", applicable: false };
-  }
-
-  const maxTarget = Math.max(...targetPressures);
-  const pressures = frames.map((f) => f.shot.pressure).filter((p) => !isNaN(p));
-  if (!pressures.length) {
-    return { key, label, score: 0, status: "poor", value: "No pressure data", applicable: false };
-  }
-
-  const maxActual = Math.max(...pressures);
-  const overshoot = Math.max(0, maxActual - maxTarget);
-
-  // Count sustained overshoot frames (>0.3 bar over target for >1s)
-  let overshootFrames = 0;
-  for (let i = 0; i < frames.length; i++) {
-    const target = targets[i]?.pressure;
-    if (target == null) continue;
-    if (frames[i].shot.pressure > target + 0.3) overshootFrames++;
-  }
-  const overshootRatio = overshootFrames / Math.max(1, frames.length);
-
-  // Score: penalize both magnitude and duration
-  const magPenalty = overshoot * 30; // lose 30 pts per bar over
-  const durPenalty = overshootRatio * 50; // lose up to 50 pts for sustained overshoot
-  const score = clamp(100 - magPenalty - durPenalty);
-
-  return {
-    key,
-    label,
-    score: Math.round(score),
-    status: statusFromScore(score),
-    value: overshoot < 0.2 ? "Well controlled" : `+${overshoot.toFixed(1)} bar peak overshoot`,
-    detail:
-      overshoot < 0.2
-        ? "Pressure stayed within profile targets"
-        : `Peak ${maxActual.toFixed(1)} bar vs ${maxTarget.toFixed(1)} bar target — try a coarser grind`,
-    applicable: true,
-  };
-}
-
-function scoreChannelingRisk(frames: ShotFrame[]): ShotMetric {
-  const key = "channeling_risk";
-  const label = "Puck Prep";
-
-  // Need enough frames for meaningful analysis
-  const flows = frames
-    .filter((f) => f.shot.flow > 0 && f.shot.pressure > 1) // only during active extraction
-    .map((f) => f.shot.flow);
-
-  if (flows.length < 20) {
+  if (recentWeights.length < 2) {
     return {
       key, label, score: 0, status: "poor",
-      value: "Not enough extraction data",
-      applicable: false,
+      value: "Need 2+ shots on this profile",
+      applicable: false, category: cat,
     };
   }
 
-  // Look for flow spikes relative to rolling average
-  const windowSize = 5;
-  const rolling = rollingAvg(flows, windowSize);
-  let spikeCount = 0;
-  let maxSpikePct = 0;
+  // How tight is the cluster? Use coefficient of variation
+  const allWeights = [...recentWeights, currentWeight];
+  const avg = allWeights.reduce((a, b) => a + b, 0) / allWeights.length;
+  const cv = stdDev(allWeights) / avg;
 
-  for (let i = windowSize; i < flows.length - 2; i++) {
-    const avg = rolling[i];
-    if (avg < 0.3) continue; // skip near-zero flow
-    const spike = (flows[i] - avg) / avg;
-    if (spike > 0.35) {
-      spikeCount++;
-      maxSpikePct = Math.max(maxSpikePct, spike);
-    }
-  }
-
-  // Score: 0 spikes = 100, degrade per spike
-  const score = clamp(100 - spikeCount * 15 - maxSpikePct * 20);
+  // CV < 0.03 = very consistent, 0.03-0.08 = good, 0.08-0.15 = fair, >0.15 = poor
+  const score = clamp(100 - (cv / 0.15) * 100);
+  const spread = Math.max(...allWeights) - Math.min(...allWeights);
 
   return {
-    key,
-    label,
+    key, label,
     score: Math.round(score),
     status: statusFromScore(score),
-    value: spikeCount === 0 ? "No spikes detected" : `${spikeCount} flow spike${spikeCount > 1 ? "s" : ""} detected`,
-    detail:
-      spikeCount === 0
-        ? "Even flow throughout — good puck prep"
-        : `${spikeCount} sudden flow increase${spikeCount > 1 ? "s" : ""} (up to ${(maxSpikePct * 100).toFixed(0)}% above average) — review distribution and tamp`,
-    applicable: true,
+    value: `±${spread.toFixed(1)}g across ${allWeights.length} shots`,
+    detail: cv < 0.03
+      ? "Very consistent — your workflow is dialed in"
+      : cv < 0.08
+        ? "Good consistency — minor variation between shots"
+        : "Inconsistent yield — check dose, grind, and distribution workflow",
+    applicable: true, category: cat,
   };
 }
 
-/** Flow Smoothness — measures how even the flow rate is during the main
- *  extraction phase. Erratic flow = poor grind uniformity or uneven puck.
- *  This is about the actual flow curve shape, not vs setpoint (that's machine). */
-function scoreFlowSmoothness(frames: ShotFrame[]): ShotMetric {
-  const key = "flow_smoothness";
-  const label = "Flow Smoothness";
+// ── Machine Metrics (informational, not scored) ──────────────
 
-  // Only look at main extraction: pressure > 2 bar AND flow > 0.3 ml/s
-  const extractionFlows = frames
-    .filter((f) => f.shot.pressure > 2 && f.shot.flow > 0.3)
-    .map((f) => f.shot.flow);
-
-  if (extractionFlows.length < 15) {
-    return {
-      key, label, score: 0, status: "poor",
-      value: "Not enough extraction data",
-      applicable: false,
-    };
-  }
-
-  // Measure frame-to-frame flow variation (jitter)
-  // A smooth flow curve has small differences between consecutive frames
-  const diffs: number[] = [];
-  for (let i = 1; i < extractionFlows.length; i++) {
-    diffs.push(Math.abs(extractionFlows[i] - extractionFlows[i - 1]));
-  }
-  const avgJitter = diffs.reduce((a, b) => a + b, 0) / diffs.length;
-  const avgFlow = extractionFlows.reduce((a, b) => a + b, 0) / extractionFlows.length;
-
-  // Normalize jitter as % of average flow (scale-independent)
-  const relativeJitter = avgFlow > 0 ? avgJitter / avgFlow : 0;
-
-  // Also measure overall coefficient of variation
-  const flowSd = stdDev(extractionFlows);
-  const cv = avgFlow > 0 ? flowSd / avgFlow : 0;
-
-  // Combined score: low jitter + low CV = smooth flow
-  // relativeJitter < 0.03 = very smooth, > 0.15 = very rough
-  const jitterScore = clamp(100 - (relativeJitter / 0.15) * 100);
-  // CV < 0.10 = consistent, > 0.40 = erratic
-  const cvScore = clamp(100 - (cv / 0.40) * 100);
-
-  const score = clamp(jitterScore * 0.6 + cvScore * 0.4);
-
-  return {
-    key,
-    label,
-    score: Math.round(score),
-    status: statusFromScore(score),
-    value: `${(relativeJitter * 100).toFixed(1)}% jitter · ${avgFlow.toFixed(1)} ml/s avg`,
-    detail:
-      score >= 85
-        ? "Smooth, even flow — excellent grind and puck prep"
-        : score >= 60
-          ? "Minor flow variation — grind could be more uniform"
-          : "Erratic flow during extraction — check grind consistency, distribution, and tamp pressure",
-    applicable: true,
-  };
-}
-
-// Espresso brew temperature must be in a reasonable range to be scored.
-// Below MIN_BREW_TEMP the shot is likely a flush/throwaway.
-const MIN_BREW_TEMP_C = 70;
-const IDEAL_BREW_TEMP_LOW = 85;
-const IDEAL_BREW_TEMP_HIGH = 96;
-
-function scoreTempStability(frames: ShotFrame[]): ShotMetric {
+function machineTempStability(frames: ShotFrame[]): ShotMetric {
   const key = "temp_stability";
   const label = "Temp Stability";
+  const cat: "machine" = "machine";
 
-  // Use bar_mid_up as primary brew temp sensor (same as computeShotStats)
-  // Skip first 5s to ignore initial thermal transient
-  const extractionFrames = frames.filter((f) => f.time > 5000);
-  const temps = extractionFrames
-    .map((f) => {
-      const t = f.sensors.bar_mid_up;
-      return typeof t === "number" && !isNaN(t) ? t : NaN;
-    })
-    .filter((t) => !isNaN(t));
+  const hotFrames = frames.filter((f) => f.time > 5000);
+  const temps = hotFrames
+    .map((f) => f.sensors.bar_mid_up)
+    .filter((t) => typeof t === "number" && !isNaN(t) && t > 0);
 
   if (temps.length < 10) {
-    return {
-      key, label, score: 0, status: "poor",
-      value: "Not enough temp data",
-      detail: "Temperature sensor data insufficient for analysis",
-      applicable: false,
-    };
+    return { key, label, score: 0, status: "poor", value: "Insufficient data", applicable: false, category: cat };
   }
 
   const sd = stdDev(temps);
   const avgTemp = temps.reduce((a, b) => a + b, 0) / temps.length;
-
-  // If avg temp is below minimum, this isn't a real espresso shot
-  if (avgTemp < MIN_BREW_TEMP_C) {
-    return {
-      key, label, score: 0, status: "poor",
-      value: `${avgTemp.toFixed(1)}°C — too cold`,
-      detail: `Average brew temperature ${avgTemp.toFixed(0)}°C is below ${MIN_BREW_TEMP_C}°C — likely a flush or throwaway shot`,
-      applicable: false,
-    };
-  }
-
-  // Stability score: 0°C std dev = 100, 3°C = 0
-  let score = clamp(100 - (sd / 3) * 100);
-
-  // Range penalty: if avg temp is outside the ideal espresso window,
-  // reduce score proportionally (up to -30 points)
-  if (avgTemp < IDEAL_BREW_TEMP_LOW) {
-    const degBelow = IDEAL_BREW_TEMP_LOW - avgTemp;
-    score = clamp(score - Math.min(degBelow * 2, 30));
-  } else if (avgTemp > IDEAL_BREW_TEMP_HIGH) {
-    const degAbove = avgTemp - IDEAL_BREW_TEMP_HIGH;
-    score = clamp(score - Math.min(degAbove * 2, 30));
-  }
-
-  const rangeNote =
-    avgTemp < IDEAL_BREW_TEMP_LOW
-      ? ` (below ideal ${IDEAL_BREW_TEMP_LOW}–${IDEAL_BREW_TEMP_HIGH}°C range)`
-      : avgTemp > IDEAL_BREW_TEMP_HIGH
-        ? ` (above ideal ${IDEAL_BREW_TEMP_LOW}–${IDEAL_BREW_TEMP_HIGH}°C range)`
-        : "";
+  const score = clamp(100 - (sd / 3) * 100);
 
   return {
-    key,
-    label,
+    key, label,
     score: Math.round(score),
     status: statusFromScore(score),
-    value: `${avgTemp.toFixed(1)}°C ±${sd.toFixed(1)}°C${rangeNote}`,
-    detail:
-      avgTemp < IDEAL_BREW_TEMP_LOW || avgTemp > IDEAL_BREW_TEMP_HIGH
-        ? `Temperature ${avgTemp.toFixed(0)}°C is outside the ideal espresso range`
-        : sd < 0.5
-          ? "Excellent thermal stability"
-          : sd < 1.5
-            ? "Minor temperature fluctuation — acceptable for most profiles"
-            : "Significant temperature variation — consider a longer preheat",
-    applicable: true,
+    value: `${avgTemp.toFixed(1)}°C ±${sd.toFixed(1)}°C`,
+    detail: sd < 0.5 ? "Excellent thermal stability" : sd < 1.5 ? "Minor fluctuation" : "Significant variation",
+    applicable: true, category: cat,
+  };
+}
+
+function machinePressureTracking(frames: ShotFrame[]): ShotMetric {
+  const key = "pressure_tracking";
+  const label = "Pressure Tracking";
+  const cat: "machine" = "machine";
+
+  const deviations: number[] = [];
+  for (const f of frames) {
+    const sp = f.shot.setpoints?.pressure;
+    if (sp == null || sp <= 0 || isNaN(f.shot.pressure)) continue;
+    deviations.push(Math.abs(f.shot.pressure - sp));
+  }
+
+  if (deviations.length < 10) {
+    return { key, label, score: 0, status: "poor", value: "No setpoint data", applicable: false, category: cat };
+  }
+
+  const avgDev = deviations.reduce((a, b) => a + b, 0) / deviations.length;
+  const score = clamp(100 - (avgDev / 1.5) * 100);
+
+  return {
+    key, label,
+    score: Math.round(score),
+    status: statusFromScore(score),
+    value: `±${avgDev.toFixed(2)} bar`,
+    detail: avgDev < 0.3 ? "Tracking accurately" : `${avgDev.toFixed(1)} bar average deviation`,
+    applicable: true, category: cat,
+  };
+}
+
+function machineFlowTracking(frames: ShotFrame[]): ShotMetric {
+  const key = "flow_tracking";
+  const label = "Flow Tracking";
+  const cat: "machine" = "machine";
+
+  const deviations: number[] = [];
+  for (const f of frames) {
+    const sp = f.shot.setpoints?.flow;
+    if (sp == null || sp <= 0 || isNaN(f.shot.flow)) continue;
+    deviations.push(Math.abs(f.shot.flow - sp));
+  }
+
+  if (deviations.length < 10) {
+    return { key, label, score: 0, status: "poor", value: "No setpoint data", applicable: false, category: cat };
+  }
+
+  const avgDev = deviations.reduce((a, b) => a + b, 0) / deviations.length;
+  const score = clamp(100 - (avgDev / 2.0) * 100);
+
+  return {
+    key, label,
+    score: Math.round(score),
+    status: statusFromScore(score),
+    value: `±${avgDev.toFixed(2)} ml/s`,
+    detail: avgDev < 0.4 ? "Tracking accurately" : `${avgDev.toFixed(1)} ml/s average deviation`,
+    applicable: true, category: cat,
   };
 }
 
@@ -645,184 +379,89 @@ function generateSuggestions(metrics: ShotMetric[]): Suggestion[] {
   const suggestions: Suggestion[] = [];
 
   for (const m of metrics) {
-    if (!m.applicable || m.score >= 80) continue;
+    if (!m.applicable || m.score >= 80 || m.category !== "barista") continue;
 
     switch (m.key) {
-      case "weight_accuracy":
-        if (m.score < 50) {
-          suggestions.push({
-            priority: "high",
-            metric: m.key,
-            message: "Weight significantly off target",
-            detail: m.detail ?? "Check dose weight and grind size. Large deviations suggest major parameter changes needed.",
-          });
-        } else {
-          suggestions.push({
-            priority: "medium",
-            metric: m.key,
-            message: "Weight slightly off target",
-            detail: m.detail ?? "Fine-tune grind size by half a step.",
-          });
-        }
-        break;
-
-      case "pressure_tracking":
+      case "yield_accuracy":
         suggestions.push({
           priority: m.score < 50 ? "high" : "medium",
           metric: m.key,
-          message: "Pressure deviated from profile",
-          detail: m.detail ?? "The machine struggled to follow the target pressure curve. This usually indicates the grind is too fine (high pressure) or too coarse (low pressure).",
+          message: m.score < 50 ? "Yield way off target" : "Yield slightly off",
+          detail: m.detail ?? "Adjust grind size — finer for more yield, coarser for less.",
         });
         break;
 
-      case "flow_tracking":
+      case "ratio":
         suggestions.push({
           priority: m.score < 50 ? "high" : "medium",
           metric: m.key,
-          message: "Flow deviated from profile",
-          detail: m.detail ?? "Flow didn't match target — grind adjustment or better puck distribution may help.",
+          message: "Brew ratio off target",
+          detail: m.detail ?? "Check your dose weight and grind to dial in the ratio.",
         });
         break;
 
-      case "pressure_overshoot":
+      case "repeatability":
         suggestions.push({
-          priority: m.score < 50 ? "high" : "medium",
+          priority: m.score < 50 ? "high" : "low",
           metric: m.key,
-          message: "Pressure exceeded profile targets",
-          detail: "Sustained pressure above target suggests the grind is too fine. Try going 1–2 steps coarser.",
+          message: "Inconsistent results",
+          detail: "Standardize your workflow: weigh dose precisely, use WDT, tamp consistently.",
         });
-        break;
-
-      case "channeling_risk":
-        suggestions.push({
-          priority: m.score < 60 ? "high" : "low",
-          metric: m.key,
-          message: "Possible channeling detected",
-          detail: "Sudden flow spikes suggest water found weak spots in the puck. Focus on even distribution and consistent tamping.",
-        });
-        break;
-
-      case "flow_smoothness":
-        suggestions.push({
-          priority: m.score < 50 ? "high" : "medium",
-          metric: m.key,
-          message: "Erratic flow during extraction",
-          detail: "Uneven flow suggests inconsistent grind particle size or uneven puck. Try a finer grind adjustment, WDT, and level tamp.",
-        });
-        break;
-
-      case "temp_stability":
-        if (m.score < 50) {
-          suggestions.push({
-            priority: "medium",
-            metric: m.key,
-            message: "Temperature fluctuated during extraction",
-            detail: "Allow more preheat time before pulling the shot for better thermal stability.",
-          });
-        }
         break;
     }
   }
 
-  // Sort by priority
-  const order = { high: 0, medium: 1, low: 2 };
-  suggestions.sort((a, b) => order[a.priority] - order[b.priority]);
+  suggestions.sort((a, b) => {
+    const order = { high: 0, medium: 1, low: 2 };
+    return order[a.priority] - order[b.priority];
+  });
 
   return suggestions;
 }
 
-// ── Throwaway / flush detection ──────────────────────────────
-
-// Max plausible espresso weight — anything above is a scale error (finger press, etc.)
-const MAX_PLAUSIBLE_WEIGHT_G = 200;
-
-function detectThrowaway(
-  frames: ShotFrame[],
-  metrics: ShotMetric[],
-  applicableCount: number
-): { throwaway: boolean; reason?: string } {
-  if (frames.length < 5) {
-    return { throwaway: true, reason: "Too few data frames" };
-  }
-
-  // Very short shot (<8s total) is almost certainly a flush
-  const lastTime = frames[frames.length - 1]?.time ?? 0;
-  if (lastTime < 8000) {
-    return { throwaway: true, reason: "Shot under 8 seconds — likely a flush" };
-  }
-
-  // Absurd weight = scale error (finger press to stop shot)
-  const weights = frames.map((f) => f.shot.weight).filter((w) => !isNaN(w));
-  const maxWeight = weights.length > 0 ? Math.max(...weights) : 0;
-  if (maxWeight > MAX_PLAUSIBLE_WEIGHT_G) {
-    return { throwaway: true, reason: `Weight ${maxWeight.toFixed(0)}g — scale error (finger press?)` };
-  }
-
-  // Check brew temp — if avg is below espresso range, it's a warmup
-  const extractionFrames = frames.filter((f) => f.time > 3000);
-  const temps = extractionFrames
-    .map((f) => f.sensors.bar_mid_up)
-    .filter((t) => typeof t === "number" && !isNaN(t) && t > 0);
-  if (temps.length > 5) {
-    const avgTemp = temps.reduce((a, b) => a + b, 0) / temps.length;
-    if (avgTemp < MIN_BREW_TEMP_C) {
-      return { throwaway: true, reason: `Brew temp ${avgTemp.toFixed(0)}°C — likely a flush or warmup` };
-    }
-  }
-
-  return { throwaway: false };
-}
-
 // ── Main Entry Point ─────────────────────────────────────────
 
-export function analyzeShot(shot: ShotEntry): ShotAnalysis {
-  const frames = shot.data ?? [];
+export function analyzeShot(
+  shot: ShotEntry,
+  recentWeightsForProfile?: number[]
+): ShotAnalysis {
+  const allFrames = shot.data ?? [];
   const profile = shot.profile;
 
-  // Reconstruct per-frame targets
-  const targets = reconstructTargets(frames, profile);
+  // Trim at piston retract — everything after is noise
+  const frames = trimAtRetract(allFrames);
 
-  // Score each metric — barista metrics first, then machine (informational)
-  const metrics: ShotMetric[] = [
-    // Barista skill metrics (scored)
-    scoreWeightAccuracy(frames, profile),
-    scoreChannelingRisk(frames),
-    scoreFlowSmoothness(frames),
-    // Machine performance metrics (informational, weight: 0)
-    scorePressureTracking(frames, targets),
-    scoreFlowTracking(frames, targets),
-    scorePressureOvershoot(frames, targets),
-    scoreTempStability(frames),
+  // Throwaway detection (uses full frames for weight check, trimmed for temp)
+  const { throwaway, reason: throwawayReason } = detectThrowaway(allFrames);
+
+  // Get final weight from trimmed extraction frames
+  const trimmedWeights = frames.map((f) => f.shot.weight).filter((w) => !isNaN(w) && w > 0);
+  const currentWeight = trimmedWeights.length > 0 ? Math.max(...trimmedWeights) : 0;
+
+  // Barista metrics (scored)
+  const baristaMetrics: ShotMetric[] = [
+    scoreYield(frames, profile),
+    scoreRatio(frames, profile),
+    scoreRepeatability(currentWeight, recentWeightsForProfile ?? [], profile?.final_weight ?? 0),
   ];
 
-  // Compute weighted overall score — only barista metrics (weight > 0) count
-  const scored = metrics.filter((m) => {
-    const config = METRIC_CONFIGS.find((c) => c.key === m.key);
-    return m.applicable && (config?.weight ?? 0) > 0;
-  });
-  const applicable = metrics.filter((m) => m.applicable);
+  // Machine metrics (informational)
+  const machineMetrics: ShotMetric[] = [
+    machinePressureTracking(frames),
+    machineFlowTracking(frames),
+    machineTempStability(frames),
+  ];
+
+  const metrics = [...baristaMetrics, ...machineMetrics];
+
+  // Overall score from barista metrics only
+  const scored = baristaMetrics.filter((m) => m.applicable);
   let overallScore = 0;
   if (scored.length > 0) {
-    const totalWeight = scored.reduce((sum, m) => {
-      const config = METRIC_CONFIGS.find((c) => c.key === m.key);
-      return sum + (config?.weight ?? 0);
-    }, 0);
-
-    overallScore = scored.reduce((sum, m) => {
-      const config = METRIC_CONFIGS.find((c) => c.key === m.key);
-      const weight = config?.weight ?? 0;
-      return sum + (m.score * weight) / totalWeight;
-    }, 0);
+    // Equal weight for all applicable barista metrics
+    overallScore = scored.reduce((sum, m) => sum + m.score, 0) / scored.length;
   }
 
-  // Detect throwaway/flush shots
-  const { throwaway, reason: throwawayReason } = detectThrowaway(frames, metrics, scored.length);
-
-  // Generate actionable suggestions (only from barista metrics)
-  const baristaMetrics = metrics.filter((m) => {
-    const config = METRIC_CONFIGS.find((c) => c.key === m.key);
-    return config?.category === "barista";
-  });
   const suggestions = generateSuggestions(baristaMetrics);
 
   return {
@@ -840,13 +479,12 @@ export function analyzeShot(shot: ShotEntry): ShotAnalysis {
 
 // ── Profile Drift ───────────────────────────────────────────
 // Compares the plan (profile) to execution (actual shots).
-// Shows how your brewing drifts from the recipe over time.
 
 export interface DriftMetric {
   field: string;
   label: string;
   planned: number;
-  actual: number; // median of recent shots
+  actual: number;
   unit: string;
   driftPct: number; // signed: positive = over, negative = under
   suggestion?: { value: number; confidence: "high" | "medium"; reason: string };
@@ -856,22 +494,19 @@ export interface ProfileDrift {
   profileName: string;
   shotCount: number;
   metrics: DriftMetric[];
-  hasDrift: boolean; // true if any metric drifts >15%
+  hasDrift: boolean;
 }
 
-/**
- * Compute profile drift from recent non-throwaway shots.
- * Shows plan vs execution for weight, duration, and temperature.
- */
 export function computeProfileDrift(
   profile: Profile,
   recentShots: ShotEntry[]
 ): ProfileDrift {
   const metrics: DriftMetric[] = [];
 
-  // Filter to valid shots
+  // Use trimmed extraction weights
   const validShots = recentShots.filter((s) => {
-    const weights = (s.data ?? []).map((f) => f.shot.weight).filter((w) => !isNaN(w) && w > 0);
+    const frames = trimAtRetract(s.data ?? []);
+    const weights = frames.map((f) => f.shot.weight).filter((w) => !isNaN(w) && w > 0);
     const maxW = weights.length > 0 ? Math.max(...weights) : 0;
     return maxW > 0 && maxW < MAX_PLAUSIBLE_WEIGHT_G;
   });
@@ -879,7 +514,8 @@ export function computeProfileDrift(
   // ── Weight drift ──
   if (profile.final_weight && profile.final_weight > 0 && validShots.length >= 1) {
     const actualWeights = validShots.map((s) => {
-      const weights = (s.data ?? []).map((f) => f.shot.weight).filter((w) => !isNaN(w) && w > 0);
+      const frames = trimAtRetract(s.data ?? []);
+      const weights = frames.map((f) => f.shot.weight).filter((w) => !isNaN(w) && w > 0);
       return Math.max(...weights);
     });
 
@@ -896,7 +532,6 @@ export function computeProfileDrift(
       driftPct,
     };
 
-    // Suggest update if consistent drift >15% across 3+ shots
     if (validShots.length >= 3 && Math.abs(driftPct) > 15) {
       const weightSd = stdDev(actualWeights);
       const cv = weightSd / medianW;
@@ -912,7 +547,7 @@ export function computeProfileDrift(
     metrics.push(dm);
   }
 
-  // ── Duration drift ── (compare actual shot time to sum of profile stage time triggers)
+  // ── Duration drift ──
   const plannedDuration = profile.stages.reduce((sum, stage) => {
     const timeTrigger = stage.exit_triggers?.find((t) => t.type === "time");
     if (timeTrigger?.value != null) {
@@ -924,7 +559,7 @@ export function computeProfileDrift(
 
   if (plannedDuration > 0 && validShots.length >= 1) {
     const actualDurations = validShots.map((s) => {
-      const frames = s.data ?? [];
+      const frames = trimAtRetract(s.data ?? []);
       return frames.length > 0 ? (frames[frames.length - 1].time / 1000) : 0;
     }).filter((d) => d > 0);
 
@@ -946,7 +581,7 @@ export function computeProfileDrift(
   // ── Temperature drift ──
   if (profile.temperature && profile.temperature > 0 && validShots.length >= 1) {
     const actualTemps = validShots.map((s) => {
-      const frames = (s.data ?? []).filter((f) => f.time > 5000);
+      const frames = trimAtRetract(s.data ?? []).filter((f) => f.time > 5000);
       const temps = frames.map((f) => f.sensors.bar_mid_up).filter((t) => typeof t === "number" && !isNaN(t) && t > MIN_BREW_TEMP_C);
       return temps.length > 0 ? temps.reduce((a, b) => a + b, 0) / temps.length : 0;
     }).filter((t) => t > 0);
@@ -974,8 +609,16 @@ export function computeProfileDrift(
   };
 }
 
-function median(arr: number[]): number {
-  const sorted = [...arr].sort((a, b) => a - b);
-  const mid = Math.floor(sorted.length / 2);
-  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+/**
+ * Get extraction weights for recent shots on a profile (for repeatability scoring).
+ * Caller should filter to same profile and non-throwaway shots.
+ */
+export function getExtractionWeights(shots: ShotEntry[]): number[] {
+  return shots
+    .map((s) => {
+      const frames = trimAtRetract(s.data ?? []);
+      const weights = frames.map((f) => f.shot.weight).filter((w) => !isNaN(w) && w > 0);
+      return weights.length > 0 ? Math.max(...weights) : 0;
+    })
+    .filter((w) => w > 0 && w < MAX_PLAUSIBLE_WEIGHT_G);
 }

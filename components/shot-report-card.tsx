@@ -284,7 +284,7 @@ export function ShotReportCard({ shot, defaultExpanded = true }: ShotReportCardP
       <div>
         <p className="text-xs text-[#f5f0ea]/25 uppercase tracking-wider mb-2">Your Skill</p>
         {analysis.metrics
-          .filter((m) => ["weight_accuracy", "channeling_risk", "flow_smoothness"].includes(m.key))
+          .filter((m) => m.category === "barista")
           .map((m) => <MetricRow key={m.key} metric={m} />)}
       </div>
 
@@ -293,7 +293,7 @@ export function ShotReportCard({ shot, defaultExpanded = true }: ShotReportCardP
         <p className="text-xs text-[#f5f0ea]/15 uppercase tracking-wider mb-2">Machine Performance</p>
         <div className="opacity-50">
           {analysis.metrics
-            .filter((m) => ["pressure_tracking", "flow_tracking", "pressure_overshoot", "temp_stability"].includes(m.key))
+            .filter((m) => m.category === "machine")
             .map((m) => <MetricRow key={m.key} metric={m} />)}
         </div>
       </div>

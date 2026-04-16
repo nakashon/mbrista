@@ -172,7 +172,7 @@ export function recordShot(
     profileId,
     profileName,
     score: analysis.overallScore,
-    dialedIn: analysis.overallScore >= DIALED_IN_THRESHOLD && analysis.applicableCount >= 3,
+    dialedIn: analysis.overallScore >= DIALED_IN_THRESHOLD && analysis.applicableCount >= 2,
   };
 
   store.shotLog.push(record);
@@ -317,7 +317,7 @@ export function getBaristaStats(): BaristaStats {
 
 /** Check if a score qualifies as "dialed in". */
 export function isDialedIn(score: number, applicableCount: number): boolean {
-  return score >= DIALED_IN_THRESHOLD && applicableCount >= 3;
+  return score >= DIALED_IN_THRESHOLD && applicableCount >= 2;
 }
 
 export { DIALED_IN_THRESHOLD, MASTERY_THRESHOLD };
