@@ -770,11 +770,6 @@ function detectThrowaway(
     }
   }
 
-  // If almost no metrics are applicable, the shot data is too sparse to be real
-  if (applicableCount <= 1 && frames.length > 20) {
-    return { throwaway: true, reason: "Insufficient data for meaningful analysis" };
-  }
-
   return { throwaway: false };
 }
 
@@ -843,72 +838,140 @@ export function analyzeShot(shot: ShotEntry): ShotAnalysis {
   };
 }
 
-// ── Profile Tuning Suggestions ──────────────────────────────
-// Analyzes recent shots on a profile and suggests updates.
+// ── Profile Drift ───────────────────────────────────────────
+// Compares the plan (profile) to execution (actual shots).
+// Shows how your brewing drifts from the recipe over time.
 
-export interface ProfileTuningSuggestion {
-  field: string; // e.g. "final_weight"
+export interface DriftMetric {
+  field: string;
   label: string;
-  currentValue: number;
-  suggestedValue: number;
-  confidence: "high" | "medium";
-  reason: string;
+  planned: number;
+  actual: number; // median of recent shots
+  unit: string;
+  driftPct: number; // signed: positive = over, negative = under
+  suggestion?: { value: number; confidence: "high" | "medium"; reason: string };
+}
+
+export interface ProfileDrift {
+  profileName: string;
+  shotCount: number;
+  metrics: DriftMetric[];
+  hasDrift: boolean; // true if any metric drifts >15%
 }
 
 /**
- * Analyze recent shots for a profile and suggest parameter updates.
- * Pass non-throwaway shots only. Needs at least 3 shots for suggestions.
+ * Compute profile drift from recent non-throwaway shots.
+ * Shows plan vs execution for weight, duration, and temperature.
  */
-export function suggestProfileTuning(
+export function computeProfileDrift(
   profile: Profile,
   recentShots: ShotEntry[]
-): ProfileTuningSuggestion[] {
-  const suggestions: ProfileTuningSuggestion[] = [];
+): ProfileDrift {
+  const metrics: DriftMetric[] = [];
 
-  // Filter to valid shots with weight data (non-throwaway, real weight)
+  // Filter to valid shots
   const validShots = recentShots.filter((s) => {
     const weights = (s.data ?? []).map((f) => f.shot.weight).filter((w) => !isNaN(w) && w > 0);
     const maxW = weights.length > 0 ? Math.max(...weights) : 0;
     return maxW > 0 && maxW < MAX_PLAUSIBLE_WEIGHT_G;
   });
 
-  if (validShots.length < 3) return suggestions;
-
-  // ── Weight target suggestion ──
-  if (profile.final_weight && profile.final_weight > 0) {
+  // ── Weight drift ──
+  if (profile.final_weight && profile.final_weight > 0 && validShots.length >= 1) {
     const actualWeights = validShots.map((s) => {
       const weights = (s.data ?? []).map((f) => f.shot.weight).filter((w) => !isNaN(w) && w > 0);
       return Math.max(...weights);
     });
 
-    const avgActual = actualWeights.reduce((a, b) => a + b, 0) / actualWeights.length;
-    const medianActual = median(actualWeights);
+    const medianW = median(actualWeights);
     const target = profile.final_weight;
-    const deviation = Math.abs(medianActual - target) / target;
+    const driftPct = ((medianW - target) / target) * 100;
 
-    // If consistently >15% off target across 3+ shots, suggest update
-    if (deviation > 0.15) {
-      // Check consistency: are shots clustered near the same weight?
+    const dm: DriftMetric = {
+      field: "final_weight",
+      label: "Yield",
+      planned: target,
+      actual: Math.round(medianW * 10) / 10,
+      unit: "g",
+      driftPct,
+    };
+
+    // Suggest update if consistent drift >15% across 3+ shots
+    if (validShots.length >= 3 && Math.abs(driftPct) > 15) {
       const weightSd = stdDev(actualWeights);
-      const cv = weightSd / avgActual;
-
+      const cv = weightSd / medianW;
       if (cv < 0.15) {
-        // Consistent — round to nearest gram
-        const suggested = Math.round(medianActual);
-        suggestions.push({
-          field: "final_weight",
-          label: "Target Weight",
-          currentValue: target,
-          suggestedValue: suggested,
+        dm.suggestion = {
+          value: Math.round(medianW),
           confidence: validShots.length >= 5 && cv < 0.08 ? "high" : "medium",
-          reason: `Your last ${validShots.length} shots averaged ${avgActual.toFixed(1)}g (target: ${target}g). ` +
-            `Updating to ${suggested}g would better match your actual brewing style.`,
-        });
+          reason: `Consistent ${driftPct > 0 ? "over" : "under"}-yield across ${validShots.length} shots`,
+        };
       }
+    }
+
+    metrics.push(dm);
+  }
+
+  // ── Duration drift ── (compare actual shot time to sum of profile stage time triggers)
+  const plannedDuration = profile.stages.reduce((sum, stage) => {
+    const timeTrigger = stage.exit_triggers?.find((t) => t.type === "time");
+    if (timeTrigger?.value != null) {
+      const v = typeof timeTrigger.value === "string" ? parseFloat(timeTrigger.value) : timeTrigger.value;
+      return sum + (isNaN(v) ? 0 : v);
+    }
+    return sum;
+  }, 0);
+
+  if (plannedDuration > 0 && validShots.length >= 1) {
+    const actualDurations = validShots.map((s) => {
+      const frames = s.data ?? [];
+      return frames.length > 0 ? (frames[frames.length - 1].time / 1000) : 0;
+    }).filter((d) => d > 0);
+
+    if (actualDurations.length > 0) {
+      const medianD = median(actualDurations);
+      const driftPct = ((medianD - plannedDuration) / plannedDuration) * 100;
+
+      metrics.push({
+        field: "duration",
+        label: "Duration",
+        planned: Math.round(plannedDuration),
+        actual: Math.round(medianD * 10) / 10,
+        unit: "s",
+        driftPct,
+      });
     }
   }
 
-  return suggestions;
+  // ── Temperature drift ──
+  if (profile.temperature && profile.temperature > 0 && validShots.length >= 1) {
+    const actualTemps = validShots.map((s) => {
+      const frames = (s.data ?? []).filter((f) => f.time > 5000);
+      const temps = frames.map((f) => f.sensors.bar_mid_up).filter((t) => typeof t === "number" && !isNaN(t) && t > MIN_BREW_TEMP_C);
+      return temps.length > 0 ? temps.reduce((a, b) => a + b, 0) / temps.length : 0;
+    }).filter((t) => t > 0);
+
+    if (actualTemps.length > 0) {
+      const medianT = median(actualTemps);
+      const driftPct = ((medianT - profile.temperature) / profile.temperature) * 100;
+
+      metrics.push({
+        field: "temperature",
+        label: "Brew Temp",
+        planned: profile.temperature,
+        actual: Math.round(medianT * 10) / 10,
+        unit: "°C",
+        driftPct,
+      });
+    }
+  }
+
+  return {
+    profileName: profile.name,
+    shotCount: validShots.length,
+    metrics,
+    hasDrift: metrics.some((m) => Math.abs(m.driftPct) > 15),
+  };
 }
 
 function median(arr: number[]): number {

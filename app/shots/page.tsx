@@ -5,13 +5,14 @@ import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { format, formatDistanceToNow } from "date-fns";
 import {
-  Loader2, ArrowLeft, Clock, Weight, Gauge, Droplets, Thermometer,
-  Layers, NotebookPen, Star, X, Lightbulb,
+  Loader2, ArrowLeft, ArrowRight, Clock, Weight, Gauge, Droplets, Thermometer,
+  Layers, NotebookPen, Star, X, Lightbulb, TrendingUp, TrendingDown,
 } from "lucide-react";
 import { getHistory, computeShotStats } from "@/lib/machine-api";
 import { getShotNote } from "@/lib/shot-notes";
 import { ShotScoreBadge } from "@/components/shot-report-card";
-import { analyzeShot, suggestProfileTuning } from "@/lib/shot-analysis";
+import { analyzeShot, computeProfileDrift } from "@/lib/shot-analysis";
+import type { ProfileDrift } from "@/lib/shot-analysis";
 import type { ShotEntry } from "@/lib/types";
 
 // Lazy-load heavy components (Recharts) — only when detail is open
@@ -101,15 +102,16 @@ function ShotDetail({ shot, allShots, onClose }: { shot: ShotEntry; allShots: Sh
   const [showTemp, setShowTemp] = useState(false);
   const [showRaw, setShowRaw] = useState(false);
 
-  // Profile tuning suggestions based on recent shots with this profile
-  const tuningSuggestions = useMemo(() => {
-    if (!shot.profile) return [];
+  // Profile Drift — plan vs execution comparison
+  const drift = useMemo(() => {
+    if (!shot.profile) return null;
     const profileShots = allShots.filter((s) => {
       if (!s.profile || s.profile.id !== shot.profile!.id) return false;
       const a = analyzeShot(s);
       return !a.throwaway;
     });
-    return suggestProfileTuning(shot.profile, profileShots);
+    if (profileShots.length === 0) return null;
+    return computeProfileDrift(shot.profile, profileShots);
   }, [shot.profile, allShots]);
 
   return (
@@ -207,27 +209,56 @@ function ShotDetail({ shot, allShots, onClose }: { shot: ShotEntry; allShots: Sh
         </div>
       )}
 
-      {/* Profile tuning suggestions */}
-      {tuningSuggestions.length > 0 && (
-        <div className="rounded-xl border border-[#e8944a]/20 bg-[#e8944a]/[0.04] p-4 space-y-3">
-          <div className="flex items-center gap-2">
-            <Lightbulb className="h-3.5 w-3.5 text-[#e8944a]" />
-            <p className="text-sm font-semibold text-[#e8944a]">Suggested Profile Update</p>
+      {/* Profile Drift — plan vs execution */}
+      {drift && drift.metrics.length > 0 && (
+        <div className={`rounded-xl border p-4 space-y-3 ${
+          drift.hasDrift
+            ? "border-[#e8944a]/20 bg-[#e8944a]/[0.04]"
+            : "border-white/[0.06] bg-[#0c0a09]"
+        }`}>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Lightbulb className="h-3.5 w-3.5 text-[#e8944a]" />
+              <p className="text-sm font-semibold text-[#e8944a]">Profile Drift</p>
+            </div>
+            <span className="text-[10px] text-[#f5f0ea]/20 font-mono">{drift.shotCount} shot{drift.shotCount !== 1 ? "s" : ""}</span>
           </div>
-          {tuningSuggestions.map((s) => (
-            <div key={s.field} className="space-y-2">
-              <p className="text-sm text-[#f5f0ea]/70">{s.reason}</p>
+          <p className="text-xs text-[#f5f0ea]/35">Plan vs what you actually brew</p>
+
+          <div className="space-y-2">
+            {drift.metrics.map((m) => {
+              const absDrift = Math.abs(m.driftPct);
+              const color = absDrift < 5 ? "#22c55e" : absDrift < 15 ? "#f59e0b" : "#ef4444";
+              const driftLabel = m.driftPct > 0 ? `+${m.driftPct.toFixed(0)}%` : `${m.driftPct.toFixed(0)}%`;
+
+              return (
+                <div key={m.field} className="flex items-center gap-3 py-1.5">
+                  <span className="text-xs text-[#f5f0ea]/40 w-20 shrink-0">{m.label}</span>
+                  <div className="flex items-center gap-2 flex-1">
+                    <span className="font-mono text-sm text-[#f5f0ea]/50">{m.planned}{m.unit}</span>
+                    <ArrowRight className="h-3 w-3 text-[#f5f0ea]/15" />
+                    <span className="font-mono text-sm font-bold text-[#f5f0ea]">{m.actual}{m.unit}</span>
+                  </div>
+                  <span
+                    className="font-mono text-xs font-bold px-1.5 py-0.5 rounded"
+                    style={{ color, backgroundColor: `${color}15` }}
+                  >
+                    {driftLabel}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Suggestions for significant drift */}
+          {drift.metrics.filter((m) => m.suggestion).map((m) => (
+            <div key={`sug-${m.field}`} className="rounded-lg bg-white/[0.03] border border-white/[0.06] p-3 space-y-2">
+              <p className="text-xs text-[#f5f0ea]/50">{m.suggestion!.reason}</p>
               <div className="flex items-center gap-3">
-                <div className="flex items-center gap-2 rounded-lg bg-white/[0.04] px-3 py-2">
-                  <span className="text-xs text-[#f5f0ea]/30 uppercase">Current</span>
-                  <span className="font-mono font-bold text-[#f5f0ea]/50 line-through">{s.currentValue}g</span>
-                </div>
-                <span className="text-[#f5f0ea]/20">→</span>
-                <div className="flex items-center gap-2 rounded-lg bg-[#e8944a]/10 border border-[#e8944a]/20 px-3 py-2">
-                  <span className="text-xs text-[#e8944a]/60 uppercase">Suggested</span>
-                  <span className="font-mono font-bold text-[#e8944a]">{s.suggestedValue}g</span>
-                </div>
-                {s.confidence === "high" && (
+                <span className="font-mono text-sm text-[#f5f0ea]/40 line-through">{m.planned}{m.unit}</span>
+                <ArrowRight className="h-3 w-3 text-[#e8944a]" />
+                <span className="font-mono text-sm font-bold text-[#e8944a]">{m.suggestion!.value}{m.unit}</span>
+                {m.suggestion!.confidence === "high" && (
                   <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#22c55e]/10 text-[#22c55e] border border-[#22c55e]/20 font-medium">
                     High confidence
                   </span>
