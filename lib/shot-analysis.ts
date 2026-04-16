@@ -733,6 +733,9 @@ function generateSuggestions(metrics: ShotMetric[]): Suggestion[] {
 
 // ── Throwaway / flush detection ──────────────────────────────
 
+// Max plausible espresso weight — anything above is a scale error (finger press, etc.)
+const MAX_PLAUSIBLE_WEIGHT_G = 200;
+
 function detectThrowaway(
   frames: ShotFrame[],
   metrics: ShotMetric[],
@@ -746,6 +749,13 @@ function detectThrowaway(
   const lastTime = frames[frames.length - 1]?.time ?? 0;
   if (lastTime < 8000) {
     return { throwaway: true, reason: "Shot under 8 seconds — likely a flush" };
+  }
+
+  // Absurd weight = scale error (finger press to stop shot)
+  const weights = frames.map((f) => f.shot.weight).filter((w) => !isNaN(w));
+  const maxWeight = weights.length > 0 ? Math.max(...weights) : 0;
+  if (maxWeight > MAX_PLAUSIBLE_WEIGHT_G) {
+    return { throwaway: true, reason: `Weight ${maxWeight.toFixed(0)}g — scale error (finger press?)` };
   }
 
   // Check brew temp — if avg is below espresso range, it's a warmup
@@ -831,4 +841,78 @@ export function analyzeShot(shot: ShotEntry): ShotAnalysis {
     throwaway,
     throwawayReason,
   };
+}
+
+// ── Profile Tuning Suggestions ──────────────────────────────
+// Analyzes recent shots on a profile and suggests updates.
+
+export interface ProfileTuningSuggestion {
+  field: string; // e.g. "final_weight"
+  label: string;
+  currentValue: number;
+  suggestedValue: number;
+  confidence: "high" | "medium";
+  reason: string;
+}
+
+/**
+ * Analyze recent shots for a profile and suggest parameter updates.
+ * Pass non-throwaway shots only. Needs at least 3 shots for suggestions.
+ */
+export function suggestProfileTuning(
+  profile: Profile,
+  recentShots: ShotEntry[]
+): ProfileTuningSuggestion[] {
+  const suggestions: ProfileTuningSuggestion[] = [];
+
+  // Filter to valid shots with weight data (non-throwaway, real weight)
+  const validShots = recentShots.filter((s) => {
+    const weights = (s.data ?? []).map((f) => f.shot.weight).filter((w) => !isNaN(w) && w > 0);
+    const maxW = weights.length > 0 ? Math.max(...weights) : 0;
+    return maxW > 0 && maxW < MAX_PLAUSIBLE_WEIGHT_G;
+  });
+
+  if (validShots.length < 3) return suggestions;
+
+  // ── Weight target suggestion ──
+  if (profile.final_weight && profile.final_weight > 0) {
+    const actualWeights = validShots.map((s) => {
+      const weights = (s.data ?? []).map((f) => f.shot.weight).filter((w) => !isNaN(w) && w > 0);
+      return Math.max(...weights);
+    });
+
+    const avgActual = actualWeights.reduce((a, b) => a + b, 0) / actualWeights.length;
+    const medianActual = median(actualWeights);
+    const target = profile.final_weight;
+    const deviation = Math.abs(medianActual - target) / target;
+
+    // If consistently >15% off target across 3+ shots, suggest update
+    if (deviation > 0.15) {
+      // Check consistency: are shots clustered near the same weight?
+      const weightSd = stdDev(actualWeights);
+      const cv = weightSd / avgActual;
+
+      if (cv < 0.15) {
+        // Consistent — round to nearest gram
+        const suggested = Math.round(medianActual);
+        suggestions.push({
+          field: "final_weight",
+          label: "Target Weight",
+          currentValue: target,
+          suggestedValue: suggested,
+          confidence: validShots.length >= 5 && cv < 0.08 ? "high" : "medium",
+          reason: `Your last ${validShots.length} shots averaged ${avgActual.toFixed(1)}g (target: ${target}g). ` +
+            `Updating to ${suggested}g would better match your actual brewing style.`,
+        });
+      }
+    }
+  }
+
+  return suggestions;
+}
+
+function median(arr: number[]): number {
+  const sorted = [...arr].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 }

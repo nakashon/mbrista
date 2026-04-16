@@ -6,12 +6,12 @@ import Link from "next/link";
 import { format, formatDistanceToNow } from "date-fns";
 import {
   Loader2, ArrowLeft, Clock, Weight, Gauge, Droplets, Thermometer,
-  Layers, NotebookPen, Star, X,
+  Layers, NotebookPen, Star, X, Lightbulb,
 } from "lucide-react";
 import { getHistory, computeShotStats } from "@/lib/machine-api";
 import { getShotNote } from "@/lib/shot-notes";
 import { ShotScoreBadge } from "@/components/shot-report-card";
-import { analyzeShot } from "@/lib/shot-analysis";
+import { analyzeShot, suggestProfileTuning } from "@/lib/shot-analysis";
 import type { ShotEntry } from "@/lib/types";
 
 // Lazy-load heavy components (Recharts) — only when detail is open
@@ -94,12 +94,23 @@ function ShotListItem({
 
 // ── Shot detail panel ────────────────────────────────────────
 
-function ShotDetail({ shot, onClose }: { shot: ShotEntry; onClose: () => void }) {
+function ShotDetail({ shot, allShots, onClose }: { shot: ShotEntry; allShots: ShotEntry[]; onClose: () => void }) {
   const stats = computeShotStats(shot.data);
   const date = new Date(shot.time * 1000);
   const accent = shot.profile?.display?.accentColor ?? "#e8944a";
   const [showTemp, setShowTemp] = useState(false);
   const [showRaw, setShowRaw] = useState(false);
+
+  // Profile tuning suggestions based on recent shots with this profile
+  const tuningSuggestions = useMemo(() => {
+    if (!shot.profile) return [];
+    const profileShots = allShots.filter((s) => {
+      if (!s.profile || s.profile.id !== shot.profile!.id) return false;
+      const a = analyzeShot(s);
+      return !a.throwaway;
+    });
+    return suggestProfileTuning(shot.profile, profileShots);
+  }, [shot.profile, allShots]);
 
   return (
     <div className="space-y-5">
@@ -193,6 +204,37 @@ function ShotDetail({ shot, onClose }: { shot: ShotEntry; onClose: () => void })
           >
             View Full Profile →
           </Link>
+        </div>
+      )}
+
+      {/* Profile tuning suggestions */}
+      {tuningSuggestions.length > 0 && (
+        <div className="rounded-xl border border-[#e8944a]/20 bg-[#e8944a]/[0.04] p-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <Lightbulb className="h-3.5 w-3.5 text-[#e8944a]" />
+            <p className="text-sm font-semibold text-[#e8944a]">Suggested Profile Update</p>
+          </div>
+          {tuningSuggestions.map((s) => (
+            <div key={s.field} className="space-y-2">
+              <p className="text-sm text-[#f5f0ea]/70">{s.reason}</p>
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2 rounded-lg bg-white/[0.04] px-3 py-2">
+                  <span className="text-xs text-[#f5f0ea]/30 uppercase">Current</span>
+                  <span className="font-mono font-bold text-[#f5f0ea]/50 line-through">{s.currentValue}g</span>
+                </div>
+                <span className="text-[#f5f0ea]/20">→</span>
+                <div className="flex items-center gap-2 rounded-lg bg-[#e8944a]/10 border border-[#e8944a]/20 px-3 py-2">
+                  <span className="text-xs text-[#e8944a]/60 uppercase">Suggested</span>
+                  <span className="font-mono font-bold text-[#e8944a]">{s.suggestedValue}g</span>
+                </div>
+                {s.confidence === "high" && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#22c55e]/10 text-[#22c55e] border border-[#22c55e]/20 font-medium">
+                    High confidence
+                  </span>
+                )}
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
@@ -316,7 +358,7 @@ function ShotsPageContent() {
           >
             <ArrowLeft className="h-3.5 w-3.5" /> All Shots
           </button>
-          <ShotDetail shot={selectedShot} onClose={() => router.push("/shots", { scroll: false })} />
+          <ShotDetail shot={selectedShot} allShots={shots} onClose={() => router.push("/shots", { scroll: false })} />
         </div>
 
         {/* Desktop: split pane */}
@@ -332,7 +374,7 @@ function ShotsPageContent() {
           </div>
           {/* Right: detail */}
           <div className="flex-1 overflow-y-auto px-6 py-6">
-            <ShotDetail shot={selectedShot} onClose={() => router.push("/shots", { scroll: false })} />
+            <ShotDetail shot={selectedShot} allShots={shots} onClose={() => router.push("/shots", { scroll: false })} />
           </div>
         </div>
       </div>
