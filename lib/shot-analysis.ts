@@ -287,11 +287,36 @@ function scoreRepeatability(
 
 // ── Machine Metrics (informational, not scored) ──────────────
 
-function machineTempStability(frames: ShotFrame[]): ShotMetric {
+/**
+ * Extended metric type that includes optional thermal breakdown.
+ * When present, the UI can show what's barista-influenced vs machine-controlled.
+ */
+export interface ThermalBreakdown {
+  /** Target temp from profile (°C) */
+  targetTemp: number | null;
+  /** Average temp during first 5s of extraction (°C) */
+  startTemp: number;
+  /** Average temp during last 5s of extraction (°C) */
+  endTemp: number;
+  /** Signed drift from start to end (°C). Positive = rising, negative = cooling */
+  drift: number;
+  /** Jitter = stddev of frame-to-frame temp changes (°C). Pure machine PID behavior */
+  jitter: number;
+  /** Offset from target at shot start (°C). Barista preheat effectiveness */
+  offsetFromTarget: number | null;
+  /** True if temp was rising (cold group head — barista didn't preheat enough) */
+  coldStart: boolean;
+}
+
+function machineTempStability(
+  frames: ShotFrame[],
+  profile?: Profile
+): ShotMetric & { thermalBreakdown?: ThermalBreakdown } {
   const key = "temp_stability";
   const label = "Temp Stability";
   const cat: "machine" = "machine";
 
+  // Skip first 5s (pre-infusion settling)
   const hotFrames = frames.filter((f) => f.time > 5000);
   const temps = hotFrames
     .map((f) => f.sensors.bar_mid_up)
@@ -305,13 +330,66 @@ function machineTempStability(frames: ShotFrame[]): ShotMetric {
   const avgTemp = temps.reduce((a, b) => a + b, 0) / temps.length;
   const score = clamp(100 - (sd / 3) * 100);
 
+  // ── Thermal breakdown: barista vs machine ──
+  const totalDuration = hotFrames[hotFrames.length - 1].time - hotFrames[0].time;
+  const earlyWindowEnd = hotFrames[0].time + Math.min(5000, totalDuration * 0.25);
+  const lateWindowStart = hotFrames[hotFrames.length - 1].time - Math.min(5000, totalDuration * 0.25);
+
+  const earlyTemps = hotFrames
+    .filter((f) => f.time <= earlyWindowEnd)
+    .map((f) => f.sensors.bar_mid_up)
+    .filter((t) => typeof t === "number" && !isNaN(t) && t > 0);
+  const lateTemps = hotFrames
+    .filter((f) => f.time >= lateWindowStart)
+    .map((f) => f.sensors.bar_mid_up)
+    .filter((t) => typeof t === "number" && !isNaN(t) && t > 0);
+
+  const startTemp = earlyTemps.length > 0 ? earlyTemps.reduce((a, b) => a + b, 0) / earlyTemps.length : avgTemp;
+  const endTemp = lateTemps.length > 0 ? lateTemps.reduce((a, b) => a + b, 0) / lateTemps.length : avgTemp;
+  const drift = endTemp - startTemp;
+
+  // Jitter: stddev of consecutive-frame deltas — pure machine PID behavior
+  const deltas: number[] = [];
+  for (let i = 1; i < temps.length; i++) {
+    deltas.push(Math.abs(temps[i] - temps[i - 1]));
+  }
+  const jitter = deltas.length > 1 ? stdDev(deltas) : 0;
+
+  const targetTemp = profile?.temperature ?? null;
+  const offsetFromTarget = targetTemp != null && targetTemp > 0 ? startTemp - targetTemp : null;
+  const coldStart = drift > 1.0; // temp rising >1°C = group head wasn't pre-heated
+
+  const thermalBreakdown: ThermalBreakdown = {
+    targetTemp,
+    startTemp: Math.round(startTemp * 10) / 10,
+    endTemp: Math.round(endTemp * 10) / 10,
+    drift: Math.round(drift * 10) / 10,
+    jitter: Math.round(jitter * 100) / 100,
+    offsetFromTarget: offsetFromTarget != null ? Math.round(offsetFromTarget * 10) / 10 : null,
+    coldStart,
+  };
+
+  // Build richer detail string
+  const parts: string[] = [];
+  if (coldStart) {
+    parts.push(`Cold start: temp rose ${drift.toFixed(1)}°C during shot — preheat longer`);
+  } else if (drift < -1.0) {
+    parts.push(`Temp dropped ${Math.abs(drift).toFixed(1)}°C — possible heat loss`);
+  } else {
+    parts.push(sd < 0.5 ? "Excellent thermal stability" : sd < 1.5 ? "Minor fluctuation" : "Significant variation");
+  }
+  if (offsetFromTarget != null && Math.abs(offsetFromTarget) > 2) {
+    parts.push(`Started ${Math.abs(offsetFromTarget).toFixed(1)}°C ${offsetFromTarget > 0 ? "above" : "below"} target`);
+  }
+
   return {
     key, label,
     score: Math.round(score),
     status: statusFromScore(score),
     value: `${avgTemp.toFixed(1)}°C ±${sd.toFixed(1)}°C`,
-    detail: sd < 0.5 ? "Excellent thermal stability" : sd < 1.5 ? "Minor fluctuation" : "Significant variation",
+    detail: parts.join(". "),
     applicable: true, category: cat,
+    thermalBreakdown,
   };
 }
 
@@ -449,7 +527,7 @@ export function analyzeShot(
   const machineMetrics: ShotMetric[] = [
     machinePressureTracking(frames),
     machineFlowTracking(frames),
-    machineTempStability(frames),
+    machineTempStability(frames, profile),
   ];
 
   const metrics = [...baristaMetrics, ...machineMetrics];

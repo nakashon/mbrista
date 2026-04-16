@@ -17,7 +17,7 @@ import {
   ChevronUp,
 } from "lucide-react";
 import type { ShotEntry } from "@/lib/types";
-import type { ShotAnalysis, ShotMetric, Suggestion, MetricStatus } from "@/lib/shot-analysis";
+import type { ShotAnalysis, ShotMetric, Suggestion, MetricStatus, ThermalBreakdown } from "@/lib/shot-analysis";
 import { analyzeShot } from "@/lib/shot-analysis";
 import { recordTrend, getRecentTrend, trendDirection } from "@/lib/shot-trend";
 import { recordShot, isDialedIn } from "@/lib/barista-stats";
@@ -61,11 +61,11 @@ function ScoreRing({ score, size = 96 }: { score: number; size?: number }) {
 // ── Metric row ───────────────────────────────────────────────
 
 const METRIC_ICONS: Record<string, typeof Gauge> = {
-  weight_accuracy: Weight,
+  yield_accuracy: Target,
+  ratio: Weight,
+  repeatability: TrendingUp,
   pressure_tracking: Gauge,
   flow_tracking: Droplets,
-  pressure_overshoot: Target,
-  channeling_risk: Zap,
   temp_stability: Thermometer,
 };
 
@@ -105,6 +105,75 @@ function MetricRow({ metric }: { metric: ShotMetric }) {
           </div>
         )}
         <p className="text-xs text-[#f5f0ea]/30 mt-1">{metric.value}</p>
+      </div>
+    </div>
+  );
+}
+
+// ── Thermal breakdown (barista vs machine) ───────────────────
+
+function ThermalCard({ breakdown }: { breakdown: ThermalBreakdown }) {
+  const driftColor = breakdown.coldStart
+    ? "#ef4444"
+    : Math.abs(breakdown.drift) > 1.0
+      ? "#f59e0b"
+      : "#22c55e";
+
+  const offsetColor =
+    breakdown.offsetFromTarget != null && Math.abs(breakdown.offsetFromTarget) > 2
+      ? "#f59e0b"
+      : "#22c55e";
+
+  return (
+    <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-3 mt-2 space-y-2">
+      <p className="text-[10px] text-[#f5f0ea]/25 uppercase tracking-wider">Thermal Breakdown</p>
+      <div className="grid grid-cols-2 gap-2 text-xs">
+        {/* Barista-influenced */}
+        <div className="space-y-1.5">
+          <p className="text-[10px] text-[#f5f0ea]/20 uppercase">Barista</p>
+          <div className="flex items-center justify-between">
+            <span className="text-[#f5f0ea]/40">Preheat</span>
+            <span style={{ color: breakdown.coldStart ? "#ef4444" : "#22c55e" }}
+              className="font-mono text-[11px]">
+              {breakdown.coldStart ? "Cold start" : "Good"}
+            </span>
+          </div>
+          {breakdown.offsetFromTarget != null && (
+            <div className="flex items-center justify-between">
+              <span className="text-[#f5f0ea]/40">vs Target</span>
+              <span style={{ color: offsetColor }} className="font-mono text-[11px]">
+                {breakdown.offsetFromTarget > 0 ? "+" : ""}
+                {breakdown.offsetFromTarget}°C
+              </span>
+            </div>
+          )}
+          <div className="flex items-center justify-between">
+            <span className="text-[#f5f0ea]/40">Drift</span>
+            <span style={{ color: driftColor }} className="font-mono text-[11px]">
+              {breakdown.drift > 0 ? "+" : ""}
+              {breakdown.drift}°C
+            </span>
+          </div>
+        </div>
+        {/* Machine-controlled */}
+        <div className="space-y-1.5">
+          <p className="text-[10px] text-[#f5f0ea]/20 uppercase">Machine</p>
+          <div className="flex items-center justify-between">
+            <span className="text-[#f5f0ea]/40">Jitter</span>
+            <span style={{ color: breakdown.jitter < 0.15 ? "#22c55e" : breakdown.jitter < 0.3 ? "#f59e0b" : "#ef4444" }}
+              className="font-mono text-[11px]">
+              {breakdown.jitter}°C
+            </span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-[#f5f0ea]/40">Start</span>
+            <span className="text-[#f5f0ea]/50 font-mono text-[11px]">{breakdown.startTemp}°C</span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-[#f5f0ea]/40">End</span>
+            <span className="text-[#f5f0ea]/50 font-mono text-[11px]">{breakdown.endTemp}°C</span>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -296,6 +365,14 @@ export function ShotReportCard({ shot, defaultExpanded = true }: ShotReportCardP
             .filter((m) => m.category === "machine")
             .map((m) => <MetricRow key={m.key} metric={m} />)}
         </div>
+        {/* Thermal breakdown if available */}
+        {(() => {
+          const tempMetric = analysis.metrics.find((m) => m.key === "temp_stability");
+          const breakdown = tempMetric && "thermalBreakdown" in tempMetric
+            ? (tempMetric as ShotMetric & { thermalBreakdown?: ThermalBreakdown }).thermalBreakdown
+            : undefined;
+          return breakdown ? <ThermalCard breakdown={breakdown} /> : null;
+        })()}
       </div>
 
       {/* Suggestions */}
