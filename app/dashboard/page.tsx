@@ -196,6 +196,7 @@ export default function DashboardPage() {
   const [liveStatus, setLiveStatus] = useState<LiveStatus | null>(null);
   const [socketState, setSocketState] = useState<"connecting" | "connected" | "error">("connecting");
   const [socketError, setSocketError] = useState<string | null>(null);
+  const [preheatRequested, setPreheatRequested] = useState(false);
 
   // Live chart state
   const [liveData, setLiveData] = useState<LivePoint[]>([]);
@@ -208,6 +209,7 @@ export default function DashboardPage() {
   const shotStartTimestampRef = useRef<number | null>(null);
   const liveDataRef = useRef<LivePoint[]>([]);
   const wasExtractingRef = useRef(false);
+  const preheatRequestedRef = useRef(false);
 
   const ip = getSavedIp();
 
@@ -252,8 +254,16 @@ export default function DashboardPage() {
       disconnect: () => setSocketState("connecting"),
       error:      (e) => { setSocketState("error"); setSocketError(e.message); },
       status:     (s) => {
+        // Debug: log machine state names to console
+        console.log("[metbarista] machine status:", s.name, s.state, s);
         setLiveStatus(s);
         setSocketState("connected");
+
+        // Clear optimistic preheat when machine moves to a different phase
+        if (preheatRequestedRef.current && (s.name !== "idle" || s.extracting)) {
+          preheatRequestedRef.current = false;
+          setPreheatRequested(false);
+        }
 
         if (s.extracting) {
           if (!startRef.current) {
@@ -306,9 +316,13 @@ export default function DashboardPage() {
   async function doAction(action: ActionType) {
     setActionLoading(action);
     try {
+      if (action === "preheat") { setPreheatRequested(true); preheatRequestedRef.current = true; }
+      if (action === "stop") { setPreheatRequested(false); preheatRequestedRef.current = false; }
       await executeAction(action);
+      refreshNow(); // immediate poll for state change
     } catch (e) {
       console.error(e);
+      if (action === "preheat") { setPreheatRequested(false); preheatRequestedRef.current = false; }
     } finally {
       setActionLoading(null);
     }
@@ -373,7 +387,7 @@ export default function DashboardPage() {
     );
   }
 
-  const isPreheating = liveStatus?.name?.toLowerCase().includes("heat") ?? false;
+  const isPreheating = preheatRequested || (liveStatus?.name?.toLowerCase().includes("heat") ?? false);
   const isExtracting = liveStatus?.extracting;
 
   const ACTIONS: { action: ActionType; label: string; icon: React.ElementType; style: "primary" | "danger" | "outline" }[] = [
