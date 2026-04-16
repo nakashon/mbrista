@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { Loader2, Layers, Plus } from "lucide-react";
+import { Loader2, Layers, Plus, Upload, ArrowLeft } from "lucide-react";
 import { listProfiles, loadProfileById } from "@/lib/machine-api";
 import { getSavedIp, useRequireConnection } from "@/lib/connection-store";
 import { ProfileCard } from "@/components/profile-card";
@@ -116,7 +117,7 @@ export default function ProfilesPage() {
               <ProfileCard
                 key={profile.id}
                 profile={profile}
-                href={`/profile?id=${profile.id}`}
+                href={`/profiles?id=${profile.id}`}
                 onLoad={loadingId === null ? handleLoad : undefined}
               />
             ))}

@@ -18,6 +18,8 @@ import { getSavedIp, clearIp, useRequireConnection } from "@/lib/connection-stor
 import { connectSocket, disconnectSocket, refreshNow } from "@/lib/machine-socket";
 import { ShotNoteEditor } from "@/components/shot-note-editor";
 import { ShotScoreBadge } from "@/components/shot-report-card";
+import { initBarista } from "@/lib/barista";
+import { runBackfill, needsBackfill } from "@/lib/history-backfill";
 import type { MachineInfo, ShotEntry, Profile, LiveStatus } from "@/lib/types";
 import type { ActionType } from "@/lib/types";
 
@@ -220,6 +222,12 @@ export default function DashboardPage() {
       setMachine(info);
       setRecentShots(shots.slice(0, 5));
       setProfiles(profs);
+
+      // Init barista identity + background backfill
+      initBarista(info.serial, info.name);
+      if (needsBackfill(info.serial)) {
+        runBackfill(info.serial).catch(() => {});
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to connect");
     } finally {
@@ -598,7 +606,7 @@ export default function DashboardPage() {
             <div className="space-y-2">
               {recentShots.map((shot) => (
                 <Link
-                  href={`/shot?id=${shot.id}`}
+                  href={`/shots?shot=${shot.id}`}
                   key={shot.id}
                   className="flex items-center gap-4 rounded-xl border border-white/[0.05] bg-[#161210] px-4 py-3 hover:border-white/[0.10] hover:bg-[#1e1b16] transition-all group"
                 >
